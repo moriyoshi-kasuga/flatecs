@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::sync::{
     Arc,
     atomic::{AtomicU32, Ordering},
@@ -9,6 +10,7 @@ use rayon::prelude::*;
 use crate::{
     Acquirable, EntityId, Extractable,
     archetype::{Archetype, ArchetypeId},
+    entity::EntityData,
 };
 
 /// The central storage for all entities and their components.
@@ -216,4 +218,106 @@ impl World {
     pub fn archetype_count(&self) -> usize {
         self.archetypes.len()
     }
+
+    /// Query entities with a base struct and additional components.
+    ///
+    /// Returns a QueryWith builder that allows iteration over entities
+    /// that have the base struct type T, optionally with additional components A.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Query for Player entities with PlayerDeathed and PlayerBuff additionals
+    /// world.query_with::<Player, (PlayerDeathed, PlayerBuff)>()
+    ///     .iter()
+    ///     .for_each(|(id, player, (deathed, buff))| {
+    ///         // player: Acquirable<Player>
+    ///         // deathed: Option<Acquirable<PlayerDeathed>>
+    ///         // buff: Option<Acquirable<PlayerBuff>>
+    ///     });
+    /// ```
+    pub fn query_with<'w, T: 'static, A: AdditionalTuple>(&'w self) -> QueryWith<'w, T, A> {
+        QueryWith {
+            world: self,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Check if an entity has an additional component.
+    pub fn has_additional<T: 'static>(&self, entity_id: &EntityId) -> bool {
+        self.get_entity_data(entity_id)
+            .map(|data| data.has_additional::<T>())
+            .unwrap_or(false)
+    }
 }
+
+/// QueryWith builder for querying entities with base struct + additional components.
+pub struct QueryWith<'w, T, A> {
+    world: &'w World,
+    _phantom: PhantomData<(T, A)>,
+}
+
+impl<'w, T: 'static, A: AdditionalTuple> QueryWith<'w, T, A> {
+    /// Create an iterator over entities with base struct T and additionals A.
+    pub fn iter(&'w self) -> impl Iterator<Item = (EntityId, Acquirable<T>, A::Output)> + 'w {
+        self.world.query_iter::<T>().map(move |(id, base)| {
+            let data = self.world.get_entity_data(&id).unwrap();
+            let additionals = A::extract_from(&data);
+            (id, base, additionals)
+        })
+    }
+
+    /// Create a parallel iterator over entities with base struct T and additionals A.
+    pub fn par_iter(
+        &'w self,
+    ) -> impl ParallelIterator<Item = (EntityId, Acquirable<T>, A::Output)> + 'w
+    where
+        T: Send + Sync,
+        Acquirable<T>: Send,
+        A::Output: Send + 'w,
+    {
+        // Snapshot the data first
+        let snapshot: Vec<_> = self
+            .world
+            .query_iter::<T>()
+            .map(|(id, base)| {
+                let data = self.world.get_entity_data(&id).unwrap();
+                let additionals = A::extract_from(&data);
+                (id, base, additionals)
+            })
+            .collect();
+
+        snapshot.into_par_iter()
+    }
+}
+
+/// Trait for tuples of additional components.
+///
+/// This trait allows querying for multiple additional components at once.
+/// Each component in the tuple is returned as Option<Acquirable<T>>.
+pub trait AdditionalTuple {
+    type Output;
+    fn extract_from(data: &EntityData) -> Self::Output;
+}
+
+macro_rules! impl_additional_tuple {
+    ($($name:ident),*) => {
+        impl<$($name: 'static),*> AdditionalTuple for ($($name),*,) {
+            type Output = ($(Option<Acquirable<$name>>),*,);
+            fn extract_from(data: &EntityData) -> Self::Output {
+                (
+                    $(data.extract_additional::<$name>()),*,
+                )
+            }
+        }
+    };
+}
+
+impl_additional_tuple!(A1);
+impl_additional_tuple!(A1, A2);
+impl_additional_tuple!(A1, A2, A3);
+impl_additional_tuple!(A1, A2, A3, A4);
+impl_additional_tuple!(A1, A2, A3, A4, A5);
+impl_additional_tuple!(A1, A2, A3, A4, A5, A6);
+impl_additional_tuple!(A1, A2, A3, A4, A5, A6, A7);
+impl_additional_tuple!(A1, A2, A3, A4, A5, A6, A7, A8);

@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use dashmap::DashMap;
+use parking_lot::RwLock;
 
 use crate::{Extractable, extractor::Extractor};
 
@@ -33,11 +33,12 @@ pub(crate) struct EntityDataInner {
     pub(crate) data: NonNull<u8>,
     pub(crate) counter: AtomicUsize,
     pub(crate) extractor: Arc<Extractor>,
-    pub(crate) additional: DashMap<TypeId, NonNull<u8>>,
+    #[allow(clippy::type_complexity)]
+    pub(crate) additional: RwLock<Vec<(TypeId, NonNull<u8>, Arc<Extractor>)>>,
 }
 
 #[repr(transparent)]
-pub(crate) struct EntityData {
+pub struct EntityData {
     inner: NonNull<EntityDataInner>,
 }
 
@@ -55,7 +56,7 @@ impl EntityData {
             data: unsafe { NonNull::new_unchecked(ptr) },
             counter: AtomicUsize::new(1),
             extractor,
-            additional: DashMap::new(),
+            additional: RwLock::new(Vec::new()),
         };
         Self {
             inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(inner))) },
@@ -72,23 +73,60 @@ impl EntityData {
     }
 
     pub(crate) fn add_additional<E: Extractable>(&self, data: E) {
-        let data = {
-            let ptr = Box::into_raw(Box::new(data)) as *mut u8;
-            unsafe { NonNull::new_unchecked(ptr) }
+        let ptr = {
+            let boxed = Box::into_raw(Box::new(data)) as *mut u8;
+            unsafe { NonNull::new_unchecked(boxed) }
         };
-        self.inner().additional.insert(TypeId::of::<E>(), data);
+
+        let inner = self.inner();
+        let type_id = TypeId::of::<E>();
+        let extractor = Arc::new(Extractor::new::<E>());
+
+        let mut additionals = inner.additional.write();
+
+        // Check if already exists and replace
+        if let Some(existing) = additionals.iter_mut().find(|(tid, _, _)| *tid == type_id) {
+            // Drop old data properly
+            unsafe {
+                (existing.2.dropper)(existing.1);
+            }
+            existing.1 = ptr;
+            existing.2 = extractor;
+        } else {
+            additionals.push((type_id, ptr, extractor));
+        }
     }
 
     pub(crate) fn extract_additional<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
-        let additional = self.inner().additional.get(&TypeId::of::<T>())?;
-        let extracted = additional.value().cast::<T>();
-        Some(crate::Acquirable::new(extracted, self.clone()))
+        let inner = self.inner();
+        let additionals = inner.additional.read();
+
+        let type_id = TypeId::of::<T>();
+        let ptr = additionals
+            .iter()
+            .find(|(tid, _, _)| *tid == type_id)?
+            .1
+            .cast::<T>();
+
+        Some(crate::Acquirable::new(ptr, self.clone()))
+    }
+
+    pub(crate) fn has_additional<T: 'static>(&self) -> bool {
+        let inner = self.inner();
+        let additionals = inner.additional.read();
+        let type_id = TypeId::of::<T>();
+        additionals.iter().any(|(tid, _, _)| *tid == type_id)
     }
 
     pub(crate) fn remove_additional<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
-        let additional = self.inner().additional.remove(&TypeId::of::<T>())?.1;
-        let extracted = additional.cast::<T>();
-        Some(crate::Acquirable::new(extracted, self.clone()))
+        let inner = self.inner();
+        let mut additionals = inner.additional.write();
+
+        let type_id = TypeId::of::<T>();
+        let pos = additionals.iter().position(|(tid, _, _)| *tid == type_id)?;
+        let (_, ptr, _) = additionals.swap_remove(pos);
+
+        Some(crate::Acquirable::new(ptr.cast::<T>(), self.clone()))
     }
 }
 
@@ -101,7 +139,17 @@ impl Drop for EntityData {
 
         std::sync::atomic::fence(Ordering::Acquire);
 
+        // Drop the main entity data
         unsafe { (inner.extractor.dropper)(inner.data) };
+
+        // Drop all additional data
+        let additionals = inner.additional.read();
+        for (_, ptr, extractor) in additionals.iter() {
+            unsafe {
+                (extractor.dropper)(*ptr);
+            }
+        }
+
         unsafe {
             let inner = Box::from_raw(self.inner.as_ptr());
             drop(inner);

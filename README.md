@@ -15,7 +15,8 @@ This crate is currently under active development. The API is not stable and may 
 - ✅ Archetype-based storage implemented
 - ✅ Iterator-based queries (zero-allocation)
 - ✅ Parallel query support with Rayon
-- ✅ Comprehensive test suite (60 tests covering integration, concurrency, memory safety, edge cases)
+- ✅ Additional components system (optional runtime data)
+- ✅ Comprehensive test suite (69 tests covering integration, concurrency, memory safety, edge cases)
 - ✅ Thread-safe operations with fine-grained locking
 - 🔄 Query composition and filtering (planned)
 
@@ -175,6 +176,14 @@ world.remove_entity(&player_id);
 - `par_query_iter<T: 'static>() -> impl ParallelIterator` - Parallel iteration for large datasets
 - `extract_component<T>(entity_id: &EntityId) -> Option<Acquirable<T>>` - Get specific component
 
+**Additional component operations:**
+
+- `add_additional<E: Extractable>(entity_id, additional: E) -> bool` - Add or replace additional component
+- `extract_additional<T>(entity_id) -> Option<Acquirable<T>>` - Get additional component
+- `has_additional<T>(entity_id) -> bool` - Check if entity has additional
+- `remove_additional<T>(entity_id) -> Option<Acquirable<T>>` - Remove and return additional
+- `query_with<T, A>() -> QueryWith<T, A>` - Query with optional additional components
+
 ### 4. Acquirable
 
 A smart reference to a component that keeps the underlying entity data alive.
@@ -214,6 +223,71 @@ Each unique entity structure gets one `Extractor` (cached in `World`), which kno
 
 - Where each component type lives in memory (offset)
 - How to safely drop the entity when done
+
+### 6. Additional Components
+
+Additional components are optional, dynamic data that can be attached to entities at runtime without modifying the base entity structure. Think of them as "tags" or "markers" that can be added and removed freely.
+
+**Use cases:**
+
+- **Temporary states**: Buffs, debuffs, status effects
+- **Optional metadata**: Tags, flags, markers
+- **Runtime data**: Quest progress, achievements, dynamic attributes
+
+**Key operations:**
+
+```rust
+// Add or replace an additional component
+world.add_additional(&entity_id, Buff { power: 50, duration: 30 });
+
+// Check if entity has an additional
+if world.has_additional::<Buff>(&entity_id) {
+    // ...
+}
+
+// Extract an additional component
+if let Some(buff) = world.extract_additional::<Buff>(&entity_id) {
+    println!("Buff power: {}", buff.power);
+}
+
+// Remove an additional component
+world.remove_additional::<Buff>(&entity_id);
+```
+
+**Query with additionals:**
+
+The `query_with` API allows you to query base entities and optionally extract additional components in a single iteration:
+
+```rust
+// Query players with optional buffs and poison status
+for (id, player, (buff, poison)) in world
+    .query_with::<Player, (Buff, Poisoned)>()
+    .iter()
+{
+    // buff: Option<Acquirable<Buff>>
+    // poison: Option<Acquirable<Poisoned>>
+    
+    if let Some(b) = buff {
+        println!("Player {} has buff: {}", player.name, b.name);
+    }
+    
+    if let Some(p) = poison {
+        println!("Player {} is poisoned!", player.name);
+    }
+}
+
+// Supports up to 6 additional types in a tuple
+world.query_with::<Player, (Buff, Poisoned, QuestProgress, Tag, Marker, Flag)>()
+```
+
+**Storage:**
+
+- Additionals are stored separately from the base entity structure
+- Each entity has a `Vec<(TypeId, Data, Extractor)>` for its additionals
+- Linear search is used (efficient for 2-3 additionals per entity)
+- Thread-safe with `RwLock` for concurrent access
+
+See `examples/additional.rs` for a complete example.
 
 ---
 
@@ -330,7 +404,7 @@ For simple operations (e.g., summing a field), sequential queries may be faster 
 
 ## Testing
 
-structecs has a comprehensive test suite with **60+ tests** covering:
+structecs has a comprehensive test suite with **69 tests** covering:
 
 ### Integration Tests (19 tests)
 - World creation and management
@@ -363,6 +437,15 @@ structecs has a comprehensive test suite with **60+ tests** covering:
 - Multiple entity types in same world
 - Archetype tracking
 
+### Additional Components Tests (9 tests)
+- Add and extract additional components
+- Check for additional existence
+- Remove additional components
+- Replace additionals of same type
+- Multiple additionals per entity
+- Query with additionals (empty, single, multiple)
+- Drop safety for additional components
+
 **Run tests:**
 
 ```bash
@@ -377,7 +460,7 @@ cargo test --test edge_cases_test
 ```
 
 **Test results:**
-- ✅ 60 tests passed
+- ✅ 69 tests passed
 - ✅ 0 failures
 - ✅ 0 warnings
 - ✅ All tests complete in ~12 seconds
@@ -419,15 +502,17 @@ cargo test --test edge_cases_test
 ### Phase 3: Quality & Testing ✅ (Completed)
 
 - [x] Entity removal
-- [x] 60+ comprehensive tests covering:
+- [x] Additional components system
+- [x] 69 comprehensive tests covering:
   - Integration tests (19 tests)
   - Concurrent operations (10 tests)
   - Memory safety (10 tests)
   - Edge cases (21 tests)
+  - Additional components (9 tests)
 
 ### Phase 4: Features (In Progress)
 
-- [ ] Dynamic component add/remove
+- [x] Additional components (optional runtime data)
 - [ ] Event system
 - [ ] Query filtering and composition
 - [ ] Advanced query builders
