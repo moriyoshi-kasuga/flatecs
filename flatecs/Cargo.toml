@@ -1,0 +1,8 @@
+[package]
+name = "flatecs"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+enum-table = "2.1"
+flatecs-macros = { path = "../flatecs-macros" }
