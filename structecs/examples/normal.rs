@@ -24,7 +24,7 @@ fn main() {
     let world = World::default();
 
     println!("=== Adding Entities ===");
-    
+
     // Add some zombies
     for i in 0..3 {
         let zombie = Zombie {
@@ -49,9 +49,9 @@ fn main() {
 
     println!("Total entities: {}", world.entity_count());
     println!("Total archetypes: {}", world.archetype_count());
-    
+
     println!("\n=== Query All Entities (Iterator) ===");
-    // NEW: Using iterator-based query (no allocation)
+    // Using iterator-based query (efficient, no allocation until snapshot)
     for (id, entity) in world.query_iter::<Entity>() {
         println!("[{}] Entity: {:?}", id.id(), *entity);
     }
@@ -70,7 +70,7 @@ fn main() {
     // Extract nested components from entities
     for (id, entity) in world.query_iter::<Entity>() {
         print!("[{}] {}", id.id(), entity.name);
-        
+
         // Try to extract as Player
         if let Some(player) = entity.extract::<Player>() {
             println!(" -> Player (health: {})", player.health);
@@ -85,7 +85,7 @@ fn main() {
 
     println!("\n=== Performance Test ===");
     let start = std::time::Instant::now();
-    
+
     // Add many entities
     for i in 0..10000 {
         let player = Player {
@@ -96,10 +96,10 @@ fn main() {
         };
         world.add_entity(player);
     }
-    
+
     let add_time = start.elapsed();
     println!("Added 10,000 entities in {:?}", add_time);
-    
+
     // Query performance
     let start = std::time::Instant::now();
     let mut count = 0;
@@ -108,7 +108,7 @@ fn main() {
     }
     let query_time = start.elapsed();
     println!("Queried {} entities in {:?}", count, query_time);
-    
+
     // Specific type query
     let start = std::time::Instant::now();
     let mut count = 0;

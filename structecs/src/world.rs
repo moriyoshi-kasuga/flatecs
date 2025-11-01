@@ -1,22 +1,28 @@
-use std::{any::TypeId, sync::{Arc, atomic::{AtomicU32, Ordering}}};
+use std::{
+    any::TypeId,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
+};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use rayon::prelude::*;
 
 use crate::{
+    Acquirable, EntityId, Extractable,
     archetype::{Archetype, ArchetypeId},
     entity::EntityData,
     extractor::Extractor,
-    Acquirable, EntityId, Extractable,
 };
 
 /// The central storage for all entities and their components.
-/// 
+///
 /// Entities are organized into archetypes based on their structure for better performance.
-/// 
+///
 /// # Thread Safety
-/// 
+///
 /// World uses lock-free data structures (DashMap) and per-archetype RwLocks for
 /// efficient concurrent access. Multiple threads can:
 /// - Add entities to different archetypes in parallel
@@ -26,13 +32,13 @@ use crate::{
 pub struct World {
     /// Archetypes indexed by their TypeId, with per-archetype RwLocks for fine-grained concurrency.
     archetypes: DashMap<ArchetypeId, Arc<RwLock<Archetype>>>,
-    
+
     /// Cached extractors for each entity type (lock-free concurrent access).
     extractors: DashMap<TypeId, Arc<Extractor>>,
-    
+
     /// Maps entity IDs to their archetype for fast lookup (lock-free concurrent access).
     entity_index: DashMap<EntityId, ArchetypeId>,
-    
+
     /// Next entity ID to assign (atomic for lock-free ID generation).
     next_entity_id: AtomicU32,
 }
@@ -63,9 +69,9 @@ impl World {
     }
 
     /// Add an entity to the world.
-    /// 
+    ///
     /// Returns the ID assigned to the entity.
-    /// 
+    ///
     /// This method is thread-safe and can be called concurrently from multiple threads.
     /// Entities with different types can be added in parallel with minimal contention.
     pub fn add_entity<E: Extractable>(&self, entity: E) -> EntityId {
@@ -74,22 +80,22 @@ impl World {
 
         let extractor = self.get_extractor::<E>();
         let entity_data = EntityData::new(entity, extractor);
-        
+
         let archetype_id = ArchetypeId::of::<E>();
         let archetype = self.get_archetype::<E>();
-        
+
         // Lock the archetype only for the duration of adding the entity
         archetype.write().add_entity(entity_id, entity_data);
-        
+
         // Update the entity index (lock-free)
         self.entity_index.insert(entity_id, archetype_id);
-        
+
         entity_id
     }
 
     /// Extract a specific component from an entity.
     pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
-        let archetype_id = self.entity_index.get(entity_id)?.clone();
+        let archetype_id = *self.entity_index.get(entity_id)?;
         let archetype = self.archetypes.get(&archetype_id)?;
         let guard = archetype.read();
         let entity_data = guard.get_entity(entity_id)?;
@@ -97,7 +103,7 @@ impl World {
     }
 
     /// Remove an entity from the world.
-    /// 
+    ///
     /// This method is thread-safe and can be called concurrently from multiple threads.
     pub fn remove_entity(&self, entity_id: &EntityId) -> bool {
         let archetype_id = match self.entity_index.remove(entity_id) {
@@ -113,19 +119,19 @@ impl World {
     }
 
     /// Create an iterator over all entities with component T.
-    /// 
+    ///
     /// This method snapshots data from relevant archetypes and returns an iterator.
     /// Locks are held briefly during the snapshot phase, then released immediately,
     /// allowing concurrent operations to proceed without blocking.
-    /// 
+    ///
     /// # Performance
-    /// 
+    ///
     /// This method is optimized for struct-based queries. Since structecs manages
     /// entities at the struct level (not individual components), iteration is
     /// straightforward and efficient.
-    /// 
+    ///
     /// # Concurrency
-    /// 
+    ///
     /// Multiple threads can call this method simultaneously. Each archetype is
     /// locked independently and briefly, minimizing contention.
     pub fn query_iter<T: 'static>(&self) -> impl Iterator<Item = (EntityId, Acquirable<T>)> {
@@ -136,9 +142,12 @@ impl World {
                 let archetype = entry.value().read();
                 if archetype.has_component::<T>() {
                     // Snapshot this archetype's data while holding the lock
-                    Some(archetype.iter_component::<T>()
-                        .map(|(id, comp)| (*id, comp))
-                        .collect::<Vec<_>>())
+                    Some(
+                        archetype
+                            .iter_component::<T>()
+                            .map(|(id, comp)| (*id, comp))
+                            .collect::<Vec<_>>(),
+                    )
                 } else {
                     None
                 }
@@ -149,26 +158,26 @@ impl World {
     }
 
     /// Create a parallel iterator over all entities with component T.
-    /// 
+    ///
     /// Uses Rayon for parallel processing across archetypes. This method is
     /// optimized for large datasets where the parallelization overhead is
     /// justified by the performance gains.
-    /// 
+    ///
     /// # Performance Considerations
-    /// 
+    ///
     /// - **Best for**: Large entity counts (>10,000 entities) with CPU-intensive operations
     /// - **Not ideal for**: Small datasets or simple queries (use `query_iter()` instead)
     /// - **Lock strategy**: Each archetype is locked independently and briefly during snapshotting
-    /// 
+    ///
     /// # Concurrency
-    /// 
+    ///
     /// Multiple threads can call this method simultaneously. The DashMap allows
     /// lock-free reads, and each archetype's RwLock is held only briefly during
     /// the snapshot phase. After snapshotting, parallel processing proceeds without
     /// holding any locks.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```ignore
     /// // Process large numbers of entities in parallel
     /// world.par_query_iter::<Player>()
@@ -176,7 +185,9 @@ impl World {
     ///         // CPU-intensive operation here
     ///     });
     /// ```
-    pub fn par_query_iter<T: 'static + Send + Sync>(&self) -> impl ParallelIterator<Item = (EntityId, Acquirable<T>)>
+    pub fn par_query_iter<T: 'static + Send + Sync>(
+        &self,
+    ) -> impl ParallelIterator<Item = (EntityId, Acquirable<T>)>
     where
         Acquirable<T>: Send,
     {
@@ -188,9 +199,12 @@ impl World {
                 let archetype = entry.value().read();
                 if archetype.has_component::<T>() {
                     // Snapshot this archetype's data while holding the lock
-                    Some(archetype.iter_component::<T>()
-                        .map(|(id, comp)| (*id, comp))
-                        .collect::<Vec<_>>())
+                    Some(
+                        archetype
+                            .iter_component::<T>()
+                            .map(|(id, comp)| (*id, comp))
+                            .collect::<Vec<_>>(),
+                    )
                 } else {
                     None
                 }

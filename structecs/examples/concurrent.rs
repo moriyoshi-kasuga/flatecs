@@ -96,7 +96,7 @@ fn main() {
     // Query from main thread while other threads might still be operating
     let player_count = world.query_iter::<Player>().count();
     let monster_count = world.query_iter::<Monster>().count();
-    
+
     println!("Players: {}", player_count);
     println!("Monsters: {}", monster_count);
 
@@ -112,7 +112,10 @@ fn main() {
             .map(|(_, player)| player.health)
             .sum();
         let elapsed = start.elapsed();
-        println!("Thread 1: Queried players, total health = {} in {:?}", total_health, elapsed);
+        println!(
+            "Thread 1: Queried players, total health = {} in {:?}",
+            total_health, elapsed
+        );
     });
     handles.push(handle);
 
@@ -125,7 +128,10 @@ fn main() {
             .map(|(_, monster)| monster.damage)
             .sum();
         let elapsed = start.elapsed();
-        println!("Thread 2: Queried monsters, total damage = {} in {:?}", total_damage, elapsed);
+        println!(
+            "Thread 2: Queried monsters, total damage = {} in {:?}",
+            total_damage, elapsed
+        );
     });
     handles.push(handle);
 
@@ -135,7 +141,10 @@ fn main() {
         let start = std::time::Instant::now();
         let count = world_clone.query_iter::<Entity>().count();
         let elapsed = start.elapsed();
-        println!("Thread 3: Queried all entities, count = {} in {:?}", count, elapsed);
+        println!(
+            "Thread 3: Queried all entities, count = {} in {:?}",
+            count, elapsed
+        );
     });
     handles.push(handle);
 

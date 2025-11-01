@@ -3,10 +3,7 @@ use std::{any::TypeId, collections::HashMap};
 /// Metadata describing how to extract types from an entity structure.
 pub enum ExtractionMetadata {
     /// Direct target at a specific offset.
-    Target {
-        type_id: TypeId,
-        offset: usize,
-    },
+    Target { type_id: TypeId, offset: usize },
     /// Nested extractable type with its own metadata.
     Nested {
         type_id: TypeId,
@@ -67,7 +64,7 @@ impl ExtractionMetadata {
 }
 
 /// Trait for types that can be extracted from entity data.
-/// 
+///
 /// This is typically derived using `#[derive(Extractable)]`.
 pub trait Extractable: 'static + Sized {
     /// Metadata describing how to extract components from this type.
