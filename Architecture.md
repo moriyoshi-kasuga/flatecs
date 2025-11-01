@@ -1,8 +1,5 @@
 # structecs アーキテクチャドキュメント
 
-**最終更新: 2025年11月1日**  
-**ステータス: テストスイート完成、本番準備完了**
-
 ---
 
 ## 📖 目次
@@ -10,14 +7,12 @@
 1. [概要](#概要)
 2. [設計思想](#設計思想)
 3. [コアコンセプト](#コアコンセプト)
-4. [アーキテクチャ詳細](#アーキテクチャ詳細)
+4. [データフロー](#データフロー)
 5. [並行処理モデル](#並行処理モデル)
 6. [メモリモデル](#メモリモデル)
-7. [パフォーマンス特性](#パフォーマンス特性)
-8. [テストスイート](#テストスイート)
-9. [使用すべきケース](#使用すべきケース)
-10. [技術的制約と設計判断](#技術的制約と設計判断)
-11. [Additional Components: 動的コンポーネント](#7-additional-components-動的コンポーネント)
+7. [Additional Components](#additional-components)
+8. [パフォーマンス特性](#パフォーマンス特性)
+9. [技術的制約と設計判断](#技術的制約と設計判断)
 
 ---
 
@@ -29,7 +24,7 @@
 
 - **階層的コンポーネント**: OOPのようにデータをネスト可能
 - **フラットなアクセス**: ネストの深さに関わらず任意の型を直接クエリ
-- **ロックフリー並行処理**: 細粒度ロックによる高並行性
+- **細粒度ロック**: アーキタイプ単位の高並行性
 - **ゼロコスト抽象化**: コンパイル時オフセット計算による直接メモリアクセス
 - **Systemの押し付けなし**: ユーザーが自由にロジックを記述
 
@@ -74,12 +69,6 @@ Player
   └─ game_mode: GameMode
 ```
 
-**従来のECSでの問題:**
-
-- コンポーネントは完全にフラット
-- 継承や包含関係を表現しにくい
-- 同じデータを複数のコンポーネントに重複して持つ必要がある
-
 **structecsの解決策:**
 
 ```rust
@@ -107,17 +96,14 @@ pub struct Player {
 
 // struct/enum単位でクエリ可能（階層内の明示的にマークされた型）
 for (id, entity) in world.query::<Entity>() {
-    // Entity, LivingEntity.entity, Player.living.entity にアクセス
     println!("Name: {}", entity.name);
 }
 
 for (id, living) in world.query::<LivingEntity>() {
-    // LivingEntity, Player.living にアクセス
     println!("Health: {}/{}", living.health, living.max_health);
 }
 
 for (id, player) in world.query::<Player>() {
-    // Player全体にアクセス
     println!("Player: {}", player.living.entity.name);
 }
 ```
@@ -130,38 +116,13 @@ for (id, player) in world.query::<Player>() {
 
 **この設計の理由:**
 
-1. **New type patternとの衝突回避**
-
-   ```rust
-   struct Health(u32);
-   struct Mana(u32);
-   // もしu32で直接クエリできたら、どちらのu32か区別不可能
-   ```
-
-2. **明確な意図**
-
-   ```rust
-   struct Player {
-       inventory: Mutex<Vec<Item>>,
-       stats: Mutex<Vec<Stat>>,
-   }
-   // Mutex<Vec<Item>>とMutex<Vec<Stat>>は異なる意味
-   // struct単位なら混同しない
-   ```
-
-3. **型安全性**
-   - プリミティブ型のクエリは曖昧
-   - struct/enum単位なら明確な意味を持つ
+1. **New type patternとの衝突回避** - `Health(u32)`と`Mana(u32)`を区別
+2. **明確な意図** - 型に意味を持たせる
+3. **型安全性** - プリミティブ型のクエリは曖昧
 
 ### 2. ユーザーが可変性を制御する
 
 **設計判断:** Worldは**読み取り専用アクセス**のみを提供し、可変性はユーザーが管理する。
-
-**理由:**
-
-1. **柔軟性**: ユーザーが最適なロック戦略を選択できる
-2. **パフォーマンス**: World全体をロックする必要がない
-3. **並行性**: 複数スレッドが同時にWorldにアクセス可能
 
 **実装パターン:**
 
@@ -173,19 +134,10 @@ pub struct Player {
     pub health: AtomicU32,  // ← ロックフリーな変更
 }
 
-for (id, health) in world.query::<AtomicU32>() {
-    health.fetch_add(10, Ordering::Relaxed);
-}
-
 // パターン2: Mutexを使う（細粒度ロック）
 #[derive(Extractable)]
 pub struct Inventory {
     pub items: Mutex<Vec<Item>>,  // ← 必要な時だけロック
-}
-
-for (id, inventory) in world.query::<Mutex<Vec<Item>>>() {
-    let mut items = inventory.lock().unwrap();
-    items.push(new_item);
 }
 
 // パターン3: RwLockを使う（読み取り/書き込み分離）
@@ -193,48 +145,17 @@ for (id, inventory) in world.query::<Mutex<Vec<Item>>>() {
 pub struct Position {
     pub coords: RwLock<Vec3>,
 }
-
-// 複数スレッドで同時に読み取り可能
-for (id, pos) in world.query::<RwLock<Vec3>>() {
-    let coords = pos.read().unwrap();
-    println!("Position: {:?}", *coords);
-}
 ```
 
 **なぜ`query_mut()`を提供しないのか:**
 
-```rust
-// もしこんなAPIがあったら...
-for (id, mut player) in world.query_mut::<Player>() {
-    player.health += 10;  // ← この間、World全体がロックされる
-}
-```
-
-問題点:
-
 - Worldの**すべてのアーキタイプ**がロックされる
-- 他のスレッドは読み取りすらブロックされる
-- 細粒度制御が不可能（一部だけAtomicにするなど）
+- 細粒度制御が不可能
+- デッドロックのリスク増加
 
 ### 3. Systemを強制しない
 
 **哲学:** フレームワークはデータ管理に徹し、ロジックの構造はユーザーに委ねる。
-
-従来のECS:
-
-```rust
-// Systemを定義しないといけない
-fn movement_system(query: Query<&mut Position, &Velocity>) {
-    for (mut pos, vel) in query.iter_mut() {
-        pos.x += vel.x;
-    }
-}
-
-// Scheduleに登録
-app.add_system(movement_system);
-```
-
-structecs:
 
 ```rust
 // 好きなように書ける
@@ -243,16 +164,6 @@ fn update_physics(world: &World, delta: f32) {
         let vel = world.extract_component::<Vec3>(&id).unwrap();
         let mut pos = pos.write().unwrap();
         pos.x += vel.x * delta;
-    }
-}
-
-// または
-impl GameServer {
-    fn tick(&self) {
-        self.update_players();
-        self.update_monsters();
-        self.handle_collisions();
-        // 自由に制御フロー
     }
 }
 ```
@@ -270,11 +181,6 @@ pub struct EntityId {
 }
 ```
 
-**責務:**
-
-- エンティティの一意識別
-- アーキタイプへのインデックス
-
 **特性:**
 
 - `Copy`: 軽量、スタックコピー可能
@@ -283,24 +189,16 @@ pub struct EntityId {
 
 ### 2. Component: 抽出可能な型
 
-structecsでは、コンポーネントは**構造体のフィールド**です。
-
 ```rust
 pub trait Extractable: 'static + Sized {
     const METADATA_LIST: &'static [ExtractionMetadata];
 }
-```
 
-**ExtractionMetadata:** コンパイル時に生成されるメタデータ
-
-```rust
 pub enum ExtractionMetadata {
-    // このフィールドそのものを抽出可能
     Target {
         type_id: TypeId,
         offset: usize,
     },
-    // ネストした構造体で、内部をさらに抽出可能
     Nested {
         type_id: TypeId,
         offset: usize,
@@ -309,30 +207,7 @@ pub enum ExtractionMetadata {
 }
 ```
 
-**例:**
-
-```rust
-#[derive(Extractable)]
-pub struct Entity {
-    pub name: String,    // offset: 0
-    pub health: u32,     // offset: 24 (Stringは24バイト)
-}
-```
-
-生成されるメタデータ:
-
-```rust
-const METADATA_LIST: &[ExtractionMetadata] = &[
-    ExtractionMetadata::Target {
-        type_id: TypeId::of::<String>(),
-        offset: 0,
-    },
-    ExtractionMetadata::Target {
-        type_id: TypeId::of::<u32>(),
-        offset: 24,
-    },
-];
-```
+コンパイル時に生成されるメタデータで、型抽出に必要なオフセット情報を保持。
 
 ### 3. Extractor: 型抽出エンジン
 
@@ -362,14 +237,13 @@ Player {
 
 // Extractorが保持するオフセットマップ
 offsets = {
-    TypeId(String): 0,    // entity.name
-    TypeId(u32): 24,      // health
-    TypeId(Entity): 0,    // entity全体
+    TypeId(Entity): 0,
+    TypeId(u32): 24,
 }
 
-// 抽出時
+// 抽出時（ゼロコスト！）
 let player_ptr: *const Player = ...;
-let health_ptr = player_ptr.offset(24) as *const u32;  // ← ゼロコスト！
+let health_ptr = player_ptr.offset(24) as *const u32;
 ```
 
 ### 4. Archetype: 同一構造のエンティティ群
@@ -380,28 +254,6 @@ pub struct Archetype {
     pub(crate) entities: Vec<(EntityId, EntityData)>,
 }
 ```
-
-**目的:** 同じ型のエンティティを連続メモリに配置（キャッシュ効率向上）
-
-**アーキタイプの決定:**
-
-```rust
-#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
-pub(crate) struct ArchetypeId(pub TypeId);
-```
-
-同じRust型 = 同じアーキタイプ
-
-**メモリレイアウト:**
-
-```
-World:
-  Archetype<Player>: [Player, Player, Player, ...]
-  Archetype<Monster>: [Monster, Monster, ...]
-  Archetype<Item>: [Item, Item, Item, ...]
-```
-
-キャッシュ局所性が高く、イテレーションが高速。
 
 ### 5. Acquirable: スマートポインタ
 
@@ -422,32 +274,6 @@ impl<T> Deref for Acquirable<T> {
 1. コンポーネントへの安全な参照
 2. エンティティデータのライフタイム管理（Arc的な動作）
 3. 同一エンティティからの追加抽出
-
-**使用例:**
-
-```rust
-let player: Acquirable<Player> = world.extract_component(&id)?;
-
-// Derefで透過的にアクセス
-println!("Name: {}", player.entity.name);
-
-// 同じエンティティから別の型を抽出
-let health: Acquirable<u32> = player.extract::<u32>()?;
-println!("Health: {}", *health);
-```
-
-**内部の参照カウント:**
-
-```rust
-pub(crate) struct EntityDataInner {
-    pub(crate) data: NonNull<u8>,
-    pub(crate) counter: NonNull<AtomicUsize>,  // ← 参照カウンタ
-    pub(crate) extractor: Arc<Extractor>,
-}
-```
-
-- `Acquirable`がクローンされると`counter`がインクリメント
-- 最後の`Acquirable`がドロップされるとエンティティデータを解放
 
 ### 6. World: 中央ストレージ
 
@@ -470,305 +296,25 @@ pub struct World {
 
 ```rust
 impl World {
-    // エンティティ追加（&self - 並行安全）
     pub fn add_entity<E: Extractable>(&self, entity: E) -> EntityId;
-    
-    // エンティティ削除（&self - 並行安全）
     pub fn remove_entity(&self, entity_id: &EntityId) -> bool;
-    
-    // コンポーネント抽出（&self - 並行安全）
+    pub fn remove_entities(&self, entity_ids: &[EntityId]) -> usize;
+    pub fn contains_entity(&self, entity_id: &EntityId) -> bool;
+    pub fn clear(&self);
     pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) 
         -> Option<Acquirable<T>>;
-    
-    // イテレータクエリ（&self - 並行安全、スナップショット）
     pub fn query<T: 'static>(&self) 
         -> impl Iterator<Item = (EntityId, Acquirable<T>)>;
-    
-    // 並列クエリ（&self - 並行安全）
-    pub fn par_query<T: 'static + Send + Sync>(&self) 
-        -> impl ParallelIterator<Item = (EntityId, Acquirable<T>)>;
 }
 ```
 
 **重要:** すべてのメソッドが`&self`（共有参照）で動作。
 
-### 7. Additional Components: 動的コンポーネント
-
-**Additional Components**は、エンティティに後から追加・削除できる動的なコンポーネントです。主要な構造体（アーキタイプ）には含まれないが、一時的に必要なデータを管理します。
-
-#### 設計目的
-
-```rust
-// 主要構造（アーキタイプ）
-#[derive(Extractable)]
-pub struct Player {
-    pub name: String,
-    pub health: u32,
-    pub position: Vec3,
-}
-
-// 一時的なデータ（Additional）
-struct Buff { power: u32, duration: u32 }
-struct PoisonEffect { damage: u32, ticks: u32 }
-struct QuestProgress { quest_id: u32, progress: u32 }
-
-// 動的に追加/削除
-world.add_additional(&player_id, Buff { power: 10, duration: 5 })?;
-world.add_additional(&player_id, PoisonEffect { damage: 2, ticks: 10 })?;
-```
-
-#### ストレージ構造
-
-```rust
-// EntityDataInner 内部
-pub(crate) struct EntityDataInner {
-    pub(crate) data: NonNull<u8>,
-    pub(crate) counter: NonNull<AtomicUsize>,
-    pub(crate) extractor: Arc<Extractor>,
-    // ↓ Additional components storage
-    pub(crate) additional: RwLock<Vec<(TypeId, NonNull<u8>, Arc<Extractor>)>>,
-    //                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    //                     型ID, データポインタ, Extractor（Drop用）
-}
-```
-
-**メモリレイアウト:**
-
-```
-EntityData
-  └─ inner: EntityDataInner
-       ├─ data: NonNull<u8>  ────→ Box<Player>
-       ├─ counter: NonNull<AtomicUsize>
-       ├─ extractor: Arc<Extractor>
-       └─ additional: RwLock<Vec<...>>
-            ├─ (TypeId(Buff), ptr → Box<Buff>, Arc<Extractor>)
-            ├─ (TypeId(PoisonEffect), ptr → Box<PoisonEffect>, Arc<Extractor>)
-            └─ (TypeId(QuestProgress), ptr → Box<QuestProgress>, Arc<Extractor>)
-```
-
-#### 主要API
-
-```rust
-impl World {
-    // Additionalコンポーネントを追加（既存の場合は置き換え）
-    pub fn add_additional<T: Extractable>(&self, entity_id: &EntityId, component: T) 
-        -> Result<(), &'static str>;
-    
-    // Additionalコンポーネントを抽出
-    pub fn extract_additional<T: 'static>(&self, entity_id: &EntityId) 
-        -> Option<Acquirable<T>>;
-    
-    // Additionalコンポーネントの存在確認
-    pub fn has_additional<T: 'static>(&self, entity_id: &EntityId) -> bool;
-    
-    // Additionalコンポーネントを削除
-    pub fn remove_additional<T: 'static>(&self, entity_id: &EntityId) -> bool;
-    
-    // Additionalコンポーネントと共にクエリ
-    pub fn query_with<T: 'static, A: AdditionalTuple>(&self) 
-        -> impl Iterator<Item = (EntityId, Acquirable<T>, A::Output)>;
-}
-```
-
-#### 使用例
-
-**1. 基本的な追加・削除:**
-
-```rust
-// バフを追加
-world.add_additional(&player_id, Buff { power: 10, duration: 5 })?;
-
-// バフを取得
-if let Some(buff) = world.extract_additional::<Buff>(&player_id) {
-    println!("Power: {}", buff.power);
-}
-
-// バフを削除
-world.remove_additional::<Buff>(&player_id);
-```
-
-**2. 置き換え:**
-
-```rust
-// 既存のBuffがあれば置き換え
-world.add_additional(&player_id, Buff { power: 20, duration: 10 })?;
-```
-
-**3. Additionalと共にクエリ:**
-
-```rust
-// 単一のAdditional
-for (id, player, buff) in world.query_with::<Player, (Buff,)>() {
-    // Buffを持つPlayerのみ
-    println!("{} has buff power {}", player.name, buff.power);
-}
-
-// 複数のAdditional（最大6個まで）
-for (id, player, (buff, poison)) in world.query_with::<Player, (Buff, PoisonEffect)>() {
-    // BuffとPoisonEffectの両方を持つPlayerのみ
-    println!("{} has buff and poison", player.name);
-}
-```
-
-#### パフォーマンス特性
-
-| 操作 | 計算量 | 備考 |
-|------|-------|------|
-| `add_additional` | O(n) | n = 既存Additional数（通常2-3個） |
-| `extract_additional` | O(n) | 線形探索 |
-| `has_additional` | O(n) | 線形探索 |
-| `remove_additional` | O(n) | 線形探索 + swap_remove |
-| `query_with` | O(m × n) | m = エンティティ数、n = Additional数 |
-
-**最適化の考慮:**
-
-- Additionalは通常2-3個程度を想定（バフ、デバフ、クエスト等）
-- 線形探索は小規模では十分高速
-- 将来的にSmallVecやHashMapへの切り替えも検討可能
-
-#### アーキタイプ vs Additional
-
-| 特徴 | アーキタイプ（主要構造） | Additional（動的） |
-|------|----------------------|-------------------|
-| **定義** | struct定義時に固定 | 実行時に追加/削除 |
-| **パフォーマンス** | ⭐⭐⭐⭐⭐ 高速 | ⭐⭐⭐ 中速 |
-| **メモリ効率** | ⭐⭐⭐⭐⭐ 連続配置 | ⭐⭐⭐ 個別確保 |
-| **柔軟性** | ⭐⭐ コンパイル時固定 | ⭐⭐⭐⭐⭐ 動的 |
-| **用途** | 必須データ、永続的 | 一時的、オプショナル |
-
-**使い分けガイド:**
-
-```rust
-// ✅ アーキタイプに含めるべき
-struct Player {
-    name: String,      // 必須
-    health: u32,       // 必須
-    position: Vec3,    // 必須
-}
-
-// ✅ Additionalにすべき
-struct Buff { power: u32, duration: u32 }        // 一時的
-struct QuestProgress { quest_id: u32 }           // オプション
-struct TempMarker { reason: String }             // デバッグ用
-
-// ❌ Optionで無駄にメモリを消費する
-struct Player {
-    name: String,
-    health: u32,
-    buff: Option<Buff>,           // すべてのPlayerで16バイト消費
-    quest: Option<QuestProgress>, // すべてのPlayerで8バイト消費
-}
-```
-
-#### スレッドセーフティ
-
-```rust
-// 並行追加（異なるエンティティ）
-thread::spawn(|| world.add_additional(&id1, Buff { ... }));
-thread::spawn(|| world.add_additional(&id2, Buff { ... }));
-// ← 完全並列（異なるエンティティ）
-
-// 並行追加（同一エンティティ）
-thread::spawn(|| world.add_additional(&id, Buff { ... }));
-thread::spawn(|| world.add_additional(&id, PoisonEffect { ... }));
-// ← RwLockの書き込みロックで直列化（安全）
-```
-
-**ロック戦略:**
-
-- `add_additional`: RwLockの書き込みロック（短時間）
-- `extract_additional`: RwLockの読み取りロック（並列可能）
-- `has_additional`: RwLockの読み取りロック（並列可能）
-- `remove_additional`: RwLockの書き込みロック（短時間）
-
-#### 実装の制約
-
-**1. 型の一意性:**
-
-```rust
-// ❌ 同じ型を複数追加できない
-world.add_additional(&id, Buff { power: 10, duration: 5 })?;
-world.add_additional(&id, Buff { power: 20, duration: 10 })?;
-// ↑ 2つ目が1つ目を置き換える
-```
-
-**回避策:**
-
-```rust
-// New type patternで区別
-struct AttackBuff(Buff);
-struct DefenseBuff(Buff);
-
-world.add_additional(&id, AttackBuff(Buff { power: 10, duration: 5 }))?;
-world.add_additional(&id, DefenseBuff(Buff { power: 5, duration: 10 }))?;
-```
-
-**2. Extractableトレイト必須:**
-
-```rust
-// ❌ Extractableでない型は追加できない
-world.add_additional(&id, 42u32)?;  // コンパイルエラー
-
-// ✅ Extractableを実装
-#[derive(Extractable)]
-struct Counter(u32);
-world.add_additional(&id, Counter(42))?;
-```
-
-#### ユースケース
-
-**1. ゲームの状態効果:**
-
-```rust
-// バフ・デバフシステム
-world.add_additional(&player_id, AttackBuff { power: 50, duration: 10 })?;
-world.add_additional(&player_id, PoisonEffect { damage: 5, ticks: 20 })?;
-
-// 毎フレームの処理
-for (id, player) in world.query::<Player>() {
-    // バフを確認
-    if let Some(buff) = world.extract_additional::<AttackBuff>(&id) {
-        apply_attack_bonus(player, buff.power);
-    }
-    
-    // デバフを確認
-    if let Some(poison) in world.extract_additional::<PoisonEffect>(&id) {
-        apply_poison_damage(player, poison.damage);
-    }
-}
-```
-
-**2. クエストシステム:**
-
-```rust
-// クエスト進行状況を動的に追加
-world.add_additional(&player_id, QuestProgress {
-    quest_id: 101,
-    progress: 0,
-})?;
-
-// クエスト完了で削除
-world.remove_additional::<QuestProgress>(&player_id);
-```
-
-**3. デバッグマーカー:**
-
-```rust
-// デバッグ用の一時マーカー
-#[cfg(debug_assertions)]
-world.add_additional(&entity_id, DebugMarker {
-    reason: "Investigation".to_string(),
-    timestamp: Instant::now(),
-})?;
-```
-
 ---
 
-## アーキテクチャ詳細
+## データフロー
 
-### データフロー
-
-#### 1. エンティティ登録フロー
+### 1. エンティティ登録フロー
 
 ```
 ユーザーコード:
@@ -793,7 +339,7 @@ World::add_entity():
 - 異なるアーキタイプへの追加 → 完全並列
 - 同じアーキタイプへの追加 → RwLockで直列化（必要最小限）
 
-#### 2. クエリ実行フロー（query）
+### 2. クエリ実行フロー
 
 ```
 ユーザーコード:
@@ -807,7 +353,7 @@ World::query():
   5. read lock解放（重要！）
   6. スナップショットをVecに収集
            ↓
-  7. Vec<Vec<(EntityId, Acquirable<T>)>> をflattenしてイテレータ返却
+  7. Vec<Vec<...>> をflattenしてイテレータ返却
            ↓
 ユーザーコード:
   for (id, health) in iter {
@@ -827,126 +373,26 @@ World::query():
 - クエリ同士も並列実行可能
 - デッドロックのリスクゼロ
 
-**トレードオフ:**
-
-- メモリ使用量増加（スナップショット保持）
-- クエリ結果は「時点スナップショット」（リアルタイムではない）
-
-#### 3. 並列クエリフロー（par_query）
+### 3. バッチ削除フロー
 
 ```
 ユーザーコード:
-  world.par_query::<Position>()
+  world.remove_entities(&[id1, id2, id3])
            ↓
-World::par_query():
-  1. すべてのArchetypeをVecに収集（Arc<RwLock>のクローン）
-  2. Rayon の into_par_iter() で並列化
-  3. 各スレッドが独立してArchetypeをread lock
-  4. 各Archetypeのentitiesをpar_iter()でさらに並列化
-  5. filter_mapでコンポーネント抽出
-           ↓
-  ParallelIterator返却
-           ↓
-ユーザーコード:
-  iter.for_each(|(id, pos)| {
-    // 複数スレッドで並列実行
-  });
+World::remove_entities():
+  1. entity_idsをアーキタイプごとにグループ化（HashMap）
+  2. 各アーキタイプに対して:
+     - write lock取得
+     - エンティティをバッチ削除
+     - write lock解放
+  3. entity_indexから削除
+  4. 削除成功数を返却
 ```
 
-**並行性:**
+**効率性:**
 
-- Archetype間: 完全並列
-- Archetype内: 並列イテレーション（Rayon）
-- ロック競合: 最小限（読み取りロックのみ）
-
-### メモリレイアウト詳細
-
-#### Worldのメモリ構造
-
-```
-World
-├─ archetypes: DashMap<ArchetypeId, Arc<RwLock<Archetype>>>
-│    ├─ ArchetypeId(Player) → Arc<RwLock<
-│    │    Archetype {
-│    │      extractor: Arc<Extractor>,
-│    │      entities: Vec<(EntityId, EntityData)>
-│    │        ├─ (EntityId(0), EntityData { inner: EntityDataInner })
-│    │        ├─ (EntityId(1), EntityData { ... })
-│    │        └─ (EntityId(2), EntityData { ... })
-│    │    }
-│    │  >>
-│    └─ ArchetypeId(Monster) → Arc<RwLock<Archetype { ... }>>
-│
-├─ extractors: DashMap<TypeId, Arc<Extractor>>
-│    ├─ TypeId(Player) → Arc<Extractor { offsets: {...}, dropper: ... }>
-│    └─ TypeId(Monster) → Arc<Extractor { ... }>
-│
-├─ entity_index: DashMap<EntityId, ArchetypeId>
-│    ├─ EntityId(0) → ArchetypeId(Player)
-│    ├─ EntityId(1) → ArchetypeId(Player)
-│    └─ EntityId(2) → ArchetypeId(Monster)
-│
-└─ next_entity_id: AtomicU32 = 3
-```
-
-#### EntityDataの内部構造
-
-```
-EntityData
-  └─ inner: EntityDataInner
-       ├─ data: NonNull<u8>  ────→ Box<Player> {
-       │                              entity: Entity { name: "Hero" },
-       │                              health: 100
-       │                            }
-       ├─ counter: NonNull<AtomicUsize>  ────→ AtomicUsize(1)  // 参照カウント
-       └─ extractor: Arc<Extractor>  ────→ [共有Extractor]
-```
-
-**参照カウントの動作:**
-
-```rust
-// 1. エンティティ追加時
-let data = EntityData::new(player, extractor);
-// counter = 1
-
-// 2. クエリでAcquirableを取得
-let acq1 = world.extract_component::<Player>(&id)?;
-// counter = 2 (EntityDataがArchetypeに1つ、Acquirableに1つ)
-
-// 3. さらに抽出
-let acq2 = acq1.extract::<String>()?;
-// counter = 3 (inner が clone される)
-
-// 4. Acquirableがドロップ
-drop(acq2);  // counter = 2
-drop(acq1);  // counter = 1
-
-// 5. エンティティ削除
-world.remove_entity(&id);
-// counter = 0 → データ解放、dropperが呼ばれる
-```
-
-### コンパイル時 vs 実行時
-
-| 処理 | タイミング | 内容 |
-|------|-----------|------|
-| **ExtractionMetadata生成** | コンパイル時 | derive(Extractable)マクロが展開 |
-| **オフセット計算** | コンパイル時 | `offset_of!`マクロで静的計算 |
-| **Extractor構築** | 初回add_entity時 | メタデータからHashMap構築、キャッシュ |
-| **型抽出** | 実行時 | HashMap<TypeId, usize>ルックアップ |
-| **ポインタ演算** | 実行時 | `ptr.add(offset)`、インライン化される |
-
-**パフォーマンス特性:**
-
-```rust
-// 疑似コード: extract<Health>()の実体
-fn extract<Health>(data: *const Player) -> Option<*const Health> {
-    let offset = extractor.offsets.get(&TypeId::of::<Health>())?;
-    // ↓ HashMapルックアップだが、Extractorは共有・キャッシュされているため高速
-    Some(unsafe { data.add(*offset) as *const Health })
-    // ↑ ポインタ演算はCPU 1命令、ゼロコスト
-}
-```
+- アーキタイプごとに1回のロック（個別削除はN回ロック）
+- HashMap使用で高速グループ化
 
 ---
 
@@ -982,7 +428,7 @@ world.add_entity(Player { ... });  // Player archetype をロック
 world.add_entity(Monster { ... }); // Monster archetype をロック
 
 // スレッド3（同時実行）
-world.query::<Item>();        // Item archetype を読み取りロック
+world.query::<Item>();             // Item archetype を読み取りロック
 ```
 
 **ロック競合:** なし
@@ -990,19 +436,10 @@ world.query::<Item>();        // Item archetype を読み取りロック
 #### パターン2: 同一アーキタイプへの読み取り（並列可能）
 
 ```rust
-// スレッド1
+// スレッド1、2、3すべて同時実行可能
 for (id, player) in world.query::<Player>() {
     // 読み取りロック（短時間、スナップショット後解放）
 }
-
-// スレッド2（同時実行）
-for (id, player) in world.query::<Player>() {
-    // 同じArchetypeに読み取りロック（並列OK）
-}
-
-// スレッド3（同時実行）
-let player = world.extract_component::<Player>(&id)?;
-// 読み取りロック（並列OK）
 ```
 
 **ロック競合:** なし（RwLockの読み取りは複数スレッド同時可能）
@@ -1013,7 +450,6 @@ let player = world.extract_component::<Player>(&id)?;
 // スレッド1
 world.add_entity(Player { ... });
 // Player archetype の write() ロック取得
-// ← この間、他のスレッドはブロック
 
 // スレッド2（待機）
 world.add_entity(Player { ... });
@@ -1022,69 +458,12 @@ world.add_entity(Player { ... });
 
 **ロック競合:** あり（必要最小限、add_entity内部のみ）
 
-#### パターン4: クエリ中の追加（並列可能）
-
-```rust
-// メインスレッド
-for (id, player) in world.query::<Player>() {
-    // ← スナップショット取得後、ロック解放済み
-    
-    // このループ中に...
-}
-
-// 別スレッド（同時実行）
-world.add_entity(Player { ... });
-// ← 新規追加は可能（ただしクエリ結果には含まれない）
-```
-
-**安全性:** スナップショット戦略により、イテレータは一貫性を保つ
-
 ### スレッドセーフティ保証
 
-**1. データ競合の防止:**
-
-- すべての共有状態は`Sync`型（DashMap, Arc, RwLock, AtomicU32）
-- `unsafe`コードは参照カウントとポインタ演算のみ（carefully audited）
-
-**2. use-after-freeの防止:**
-
-- `Acquirable`による参照カウント
-- エンティティ削除時も`Acquirable`が生きていればデータは保持
-
-**3. デッドロックの防止:**
-
-- ロック順序の一貫性（常にArchetype単位）
-- スナップショット戦略（長時間ロック保持なし）
-- ネストしたロックなし
-
-**4. メモリ安全性:**
-
-```rust
-unsafe impl Send for Acquirable<T> where T: Send {}
-unsafe impl Sync for Acquirable<T> where T: Sync {}
-```
-
-- `T`の`Send`/`Sync`を尊重
-- 内部の`NonNull<T>`は`Arc`パターンで保護
-
-### パフォーマンス特性（並行処理）
-
-**ベンチマーク結果（15,000エンティティ、3スレッド）:**
-
-```
-Thread 1 (Player追加):   5,000エンティティ in 4.9ms
-Thread 2 (Monster追加):  5,000エンティティ in 2.4ms  ← 並列！
-Thread 3 (Player追加):   5,000エンティティ in 4.9ms  ← 並列！
-
-Thread 1 (Playerクエリ):   10,000エンティティ in 1.2ms
-Thread 2 (Monsterクエリ):  5,000エンティティ in 0.4ms  ← 同時実行！
-Thread 3 (全エンティティ):  15,000エンティティ in 1.7ms  ← 同時実行！
-```
-
-**スケーラビリティ:**
-
-- アーキタイプ数に比例（アーキタイプごとに独立）
-- CPU コア数まで線形スケール（理想的条件下）
+1. **データ競合の防止:** すべての共有状態は`Sync`型
+2. **use-after-freeの防止:** `Acquirable`による参照カウント
+3. **デッドロックの防止:** ロック順序の一貫性、スナップショット戦略
+4. **メモリ安全性:** `T`の`Send`/`Sync`を尊重
 
 ---
 
@@ -1118,49 +497,9 @@ let counter = Box::leak(Box::new(AtomicUsize::new(1))).into();
 pub(crate) entities: Vec<(EntityId, EntityData)>,
 ```
 
-- `Vec`による連続メモリ配置
 - 動的拡張（capacity倍増戦略）
-- キャッシュ局所性が高い
-
-### メモリオーバーヘッド
-
-**エンティティあたりのオーバーヘッド:**
-
-```
-1つのEntityDataにつき:
-  - EntityId: 4 bytes
-  - NonNull<u8>: 8 bytes（64bit）
-  - NonNull<AtomicUsize>: 8 bytes
-  - Arc<Extractor>: 8 bytes（ポインタ）
-  ─────────────────────────────
-  合計: 28 bytes + エンティティ本体サイズ
-```
-
-**追加のメモリ:**
-
-- Extractor: 1型につき1つ（共有）
-- DashMap: 内部バケット（エンティリ数に比例）
-- スナップショット: クエリ実行中のみ一時確保
 
 ### メモリ解放
-
-**エンティティ削除時:**
-
-```rust
-pub fn remove_entity(&self, entity_id: &EntityId) -> bool {
-    // 1. entity_indexから削除（DashMap）
-    let archetype_id = self.entity_index.remove(entity_id)?;
-    
-    // 2. Archetypeから削除（Vec::swap_remove）
-    let archetype = self.archetypes.get(&archetype_id)?;
-    let entity_data = archetype.write().remove_entity(entity_id)?;
-    
-    // 3. EntityDataがドロップ
-    drop(entity_data);
-    // ↓ この時点で参照カウント減少
-    // ↓ counter == 0 なら実データも解放
-}
-```
 
 **参照カウントによる遅延解放:**
 
@@ -1171,11 +510,86 @@ impl Drop for EntityDataInner {
             return;  // まだ他にAcquirableが存在
         }
         // 最後の参照がドロップされた
-        unsafe { (self.extractor.dropper)(self.data) };  // エンティティ本体を解放
-        unsafe { drop(Box::from_raw(self.counter.as_ptr())) };  // カウンタを解放
+        unsafe { (self.extractor.dropper)(self.data) };
+        unsafe { drop(Box::from_raw(self.counter.as_ptr())) };
     }
 }
 ```
+
+エンティティ削除時も`Acquirable`が生きていればデータは保持されます。
+
+---
+
+## Additional Components
+
+**Additional Components**は、エンティティに後から追加・削除できる動的なコンポーネントです。
+
+### 設計目的
+
+```rust
+// 主要構造（アーキタイプ）
+#[derive(Extractable)]
+pub struct Player {
+    pub name: String,
+    pub health: u32,
+}
+
+// 一時的なデータ（Additional）
+struct Buff { power: u32, duration: u32 }
+struct PoisonEffect { damage: u32, ticks: u32 }
+
+// 動的に追加/削除
+world.add_additional(&player_id, Buff { power: 10, duration: 5 })?;
+world.remove_additional::<Buff>(&player_id);
+```
+
+### ストレージ構造
+
+```rust
+pub(crate) struct EntityDataInner {
+    pub(crate) data: NonNull<u8>,
+    pub(crate) counter: NonNull<AtomicUsize>,
+    pub(crate) extractor: Arc<Extractor>,
+    pub(crate) additional: RwLock<Vec<(TypeId, NonNull<u8>, Arc<Extractor>)>>,
+}
+```
+
+各エンティティがAdditionalコンポーネントのリストを保持。
+
+### 主要API
+
+```rust
+impl World {
+    pub fn add_additional<T: Extractable>(&self, entity_id: &EntityId, component: T) 
+        -> Result<(), &'static str>;
+    pub fn extract_additional<T: 'static>(&self, entity_id: &EntityId) 
+        -> Option<Acquirable<T>>;
+    pub fn has_additional<T: 'static>(&self, entity_id: &EntityId) -> bool;
+    pub fn remove_additional<T: 'static>(&self, entity_id: &EntityId) -> bool;
+    pub fn query_with<T: 'static, A: AdditionalTuple>(&self) 
+        -> impl Iterator<Item = (EntityId, Acquirable<T>, A::Output)>;
+}
+```
+
+### 使用例
+
+```rust
+// Additionalと共にクエリ
+for (id, player, (buff, poison)) in world.query_with::<Player, (Buff, PoisonEffect)>() {
+    // BuffとPoisonEffectの両方を持つPlayerのみ
+    println!("{} has buff power {} and poison", player.name, buff.power);
+}
+```
+
+### アーキタイプ vs Additional
+
+| 特徴 | アーキタイプ（主要構造） | Additional（動的） |
+|------|----------------------|-------------------|
+| **定義** | struct定義時に固定 | 実行時に追加/削除 |
+| **パフォーマンス** | ⭐⭐⭐⭐⭐ 高速 | ⭐⭐⭐ 中速 |
+| **メモリ効率** | ⭐⭐⭐⭐⭐ 連続配置 | ⭐⭐⭐ 個別確保 |
+| **柔軟性** | ⭐⭐ コンパイル時固定 | ⭐⭐⭐⭐⭐ 動的 |
+| **用途** | 必須データ、永続的 | 一時的、オプショナル |
 
 ---
 
@@ -1192,338 +606,13 @@ impl Drop for EntityDataInner {
 | 型指定クエリ | ~3.4ms | フィルタリング込み |
 | コンポーネント抽出 | ~100ns | HashMap + ポインタ演算 |
 
-**並列クエリ（10,000エンティティ、複雑な計算）:**
-
-| 方式 | 時間 | スピードアップ |
-|------|------|---------------|
-| Sequential（query） | 37ms | 1.0x |
-| Parallel（par_query） | 27ms | **1.35x** |
-
-**並行追加（15,000エンティティ、3スレッド）:**
-
-| スレッド | アーキタイプ | 時間 |
-|---------|--------------|------|
-| Thread 1 | Player | 4.9ms |
-| Thread 2 | Monster | 2.4ms |
-| Thread 3 | Player | 4.9ms |
-
-**並行クエリ（15,000エンティティ、3スレッド同時）:**
-
-| スレッド | クエリ対象 | 時間 |
-|---------|-----------|------|
-| Thread 1 | Player (10,000) | 1.2ms |
-| Thread 2 | Monster (5,000) | 0.4ms |
-| Thread 3 | 全エンティティ (15,000) | 1.7ms |
-
-### パフォーマンス最適化のポイント
-
-**1. アーキタイプベースストレージ:**
-
-- 同じ型のエンティティは連続配置
-- CPU キャッシュヒット率向上
-- SIMD化の余地（将来の最適化）
-
-**2. Extractorキャッシング:**
-
-- 各型につき1つのExtractor（共有）
-- メタデータの再計算なし
-- HashMap ルックアップは1回のみ
-
-**3. イテレータベースAPI:**
-
-```rust
-// ❌ 遅い（Vecアロケーション）
-let players: Vec<_> = world.query_collect::<Player>();
-for player in players { ... }
-
-// ✅ 速い（アロケーションなし）
-for (id, player) in world.query::<Player>() { ... }
-```
-
-**4. スナップショット戦略:**
-
-- 短時間のロック保持
-- ロック競合の最小化
-- ただしメモリ使用量は増加（トレードオフ）
-
-**5. 細粒度ロック:**
-
-```
-粗粒度ロック（従来のMutex<World>）:
-  add_entity(): ████████ (World全体ロック)
-  query(): ██████████ (World全体ロック)
-  → 完全に直列化
-
-細粒度ロック（structecs）:
-  add_entity(Player):  ██ (Playerアーキタイプのみ)
-  add_entity(Monster):   ██ (Monsterアーキタイプのみ) ← 並列！
-  query(Item):        ■ (Itemアーキタイプのみ) ← 並列！
-```
-
-### いつ並列クエリを使うべきか
-
-**`par_query()` が有利な場合:**
-
-- エンティティ数 > 10,000
-- 各エンティティの処理が重い（計算、I/O）
-- CPU バウンドな処理
-- 複数アーキタイプにまたがるクエリ
-
-**`query()` が有利な場合:**
-
-- エンティティ数 < 10,000
-- 各エンティティの処理が軽い（単純な読み取り）
-- メモリバウンドな処理
-- 単一アーキタイプのクエリ
-
-**理由:** 並列化にはオーバーヘッド（スレッド生成、同期）があり、処理が軽すぎると逆に遅くなる。
-
----
-
-## テストスイート
-
-### 包括的テストカバレッジ
-
-structecsは**69個の統合テスト**で検証されており、本番環境での使用に十分な品質を確保しています。
-
-#### テスト構成
-
-| テストファイル | テスト数 | カバー範囲 |
-|---------------|---------|-----------|
-| **integration_test.rs** | 28 | 基本API、クエリ、コンポーネント抽出、Additional |
-| **concurrent_test.rs** | 10 | 並行エンティティ追加、並列クエリ、スレッドセーフティ |
-| **memory_safety_test.rs** | 10 | メモリリーク検出、Drop動作、大量エンティティ処理 |
-| **edge_cases_test.rs** | 21 | 空操作、Unicode、境界値、アーキタイプ追跡 |
-| **合計** | **69** | **完全な機能検証** |
-
-#### テスト詳細
-
-**1. Integration Tests（統合テスト）**
-
-```rust
-// 基本操作
-- add_entity_and_retrieve()      // エンティティ追加と取得
-- remove_entity_success()        // エンティティ削除
-- extract_nested_components()    // ネストしたコンポーネント抽出
-- query_multiple_archetypes()    // 複数アーキタイプのクエリ
-
-// クエリ機能
-- query_basic()             // 基本的なイテレータクエリ
-- query_empty()             // 空のクエリ処理
-- par_query_basic()         // 並列クエリ
-- query_mixed_types()            // 混合型のクエリ
-
-// Additional Components（9テスト）
-- add_additional_component()     // Additional追加
-- extract_additional_component() // Additional抽出
-- has_additional_component()     // Additional存在確認
-- remove_additional_component()  // Additional削除
-- additional_component_replace() // 置き換え
-- query_with_single_additional() // 単一Additionalでクエリ
-- query_with_multiple_additional() // 複数Additionalでクエリ
-- query_with_optional_missing()  // Additionalがないケース
-- additional_survives_removal()  // Acquirable保持中の削除
-
-// エッジケース
-- entity_id_uniqueness()         // EntityIDの一意性
-- archetype_isolation()          // アーキタイプ分離
-```
-
-**2. Concurrent Tests（並行処理テスト）**
-
-```rust
-// 並行エンティティ追加（10-100スレッド）
-- concurrent_add_entity_10_threads()
-- concurrent_add_entity_50_threads()
-- concurrent_add_entity_100_threads()
-
-// 並行クエリと追加の同時実行
-- concurrent_query_and_add()
-
-// 大規模並行処理
-- heavy_concurrent_load()        // 10,000エンティティ、10スレッド
-
-// データ競合検出
-- no_data_races_in_queries()
-```
-
-**3. Memory Safety Tests（メモリ安全性テスト）**
-
-```rust
-// メモリリーク検出
-- no_memory_leak_basic()
-- no_memory_leak_with_query()
-- memory_leak_detection_with_cycles()  // 50,000エンティティの追加/削除
-
-// Drop動作
-- proper_drop_on_remove()
-- drop_count_verification()
-
-// 参照カウント
-- entity_data_survives_removal()      // 削除後もAcquirableが有効
-- multiple_acquirable_references()    // 複数参照の管理
-```
-
-**4. Edge Cases Tests（エッジケーステスト）**
-
-```rust
-// 空操作
-- empty_world_operations()
-- remove_nonexistent_entity()
-- query_empty_world()
-
-// 文字列エッジケース
-- unicode_string_handling()
-- empty_string_handling()
-- large_string_handling()
-
-// 大量データ
-- large_entity_count()               // 10,000エンティティ
-- rapid_add_remove_cycles()
-
-// アーキタイプ管理
-- multiple_entity_types()
-- archetype_tracking()
-```
-
-#### テスト実行結果
-
-```bash
-$ cargo test --release
-
-running 69 tests
-test concurrent_test::concurrent_add_entity_10_threads ... ok (342ms)
-test concurrent_test::concurrent_add_entity_50_threads ... ok (1.8s)
-test concurrent_test::concurrent_query_and_add ... ok (245ms)
-test integration_test::add_entity_and_retrieve ... ok (0.1ms)
-test integration_test::add_additional_component ... ok (0.2ms)
-test integration_test::query_with_single_additional ... ok (8ms)
-test integration_test::query_with_multiple_additional ... ok (10ms)
-test integration_test::query_basic ... ok (12ms)
-test memory_safety_test::memory_leak_detection_with_cycles ... ok (3.2s)
-test edge_cases_test::large_entity_count ... ok (18ms)
-...
-
-test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured
-```
-
-**合計実行時間**: 約12秒（Release mode）
-
-#### 品質保証
-
-✅ **データ競合ゼロ** - 並行テストで検証済み  
-✅ **メモリリークゼロ** - 50,000エンティティサイクルで確認  
-✅ **スレッドセーフ** - 100スレッド同時アクセステスト通過  
-✅ **API安定性** - 69テスト全パス、警告ゼロ  
-✅ **エッジケース対応** - Unicode、空データ、境界値すべてカバー  
-✅ **Additional機能完備** - CRUD操作、クエリ統合、メモリ安全性確認  
-
-#### 今後のテスト計画
-
-- **Miri検証**: `cargo +nightly miri test` での未定義動作検出
-- **ベンチマーク**: 他のECSライブラリとの性能比較
-- **Fuzzing**: ランダム入力による堅牢性テスト
-- **統合サンプル**: 実践的なゲームサーバーの例
-
----
-
-## 使用すべきケース
-
-### ✅ structecsが最適な用途
-
-**1. 複雑なゲームサーバー**
-
-例: Minecraftサーバー
-
-```rust
-// 階層的なエンティティ構造
-Entity
-  └─ LivingEntity
-      ├─ Player
-      │   ├─ Inventory
-      │   ├─ Permissions
-      │   └─ Statistics
-      └─ Monster
-          ├─ AI
-          └─ LootTable
-```
-
-- エンティティの継承関係が自然
-- ゲームロジックが多様（Systemに収まらない）
-- 高い並行性（複数プレイヤー同時処理）
-
-**2. MMORPGサーバー**
-
-- 数万エンティティの管理
-- 複雑なクエリ（範囲検索、条件フィルタ）
-- リアルタイム性（低レイテンシ）
-- 並行処理（ゾーンごとに独立）
-
-**3. シミュレーション**
-
-例: 物理シミュレーション、交通シミュレーション
-
-```rust
-// エージェントごとに異なる状態を持つ
-struct Agent {
-    position: RwLock<Vec3>,
-    velocity: RwLock<Vec3>,
-    state: Mutex<AgentState>,
-    memory: Mutex<HashMap<String, Value>>,
-}
-```
-
-- エンティティの状態が多様
-- 細粒度の並行制御（各エージェント独立）
-- カスタムロジック（ルールベース、ML）
-
-**4. 複雑なビジネスロジック**
-
-- データモデルが階層的
-- OOP的な設計が自然
-- 動的な型抽出が必要
-- 並行トランザクション処理
-
-### ❌ structecsが不向きな用途
-
-**1. シンプルなゲーム**
-
-- エンティティが単純（Player, Enemy, Bullet程度）
-- 従来のECS（Bevy）で十分
-- Systemパターンがフィット
-
-**2. 最大パフォーマンス重視**
-
-- マイクロ秒単位の最適化が必要
-- データレイアウトの完全制御
-- SIMD命令の手動最適化
-- → 生のメモリ操作やCustom ECSの方が良い
-
-**3. 静的な型システムで完結**
-
-- コンパイル時にすべての型が決定
-- 動的抽出が不要
-- → 従来のECSの型安全性を活かせる
-
-**4. 既存のエコシステムに依存**
-
-- Bevyプラグインを使いたい
-- specs/hecs の資産がある
-- → 移行コストが高い
-
-### 要件マトリックス
-
-| 要件 | 重要度 | structecs適合度 |
-|------|--------|----------------|
-| 階層的データ構造 | 高 | ⭐⭐⭐⭐⭐ |
-| 柔軟なクエリ | 高 | ⭐⭐⭐⭐⭐ |
-| 並行処理 | 高 | ⭐⭐⭐⭐⭐ |
-| 動的型抽出 | 中 | ⭐⭐⭐⭐⭐ |
-| Systemなしの自由度 | 中 | ⭐⭐⭐⭐⭐ |
-| シンプルなAPI | 中 | ⭐⭐⭐⭐ |
-| パフォーマンス | 中 | ⭐⭐⭐⭐ |
-| 型安全性（コンパイル時） | 低 | ⭐⭐⭐ |
-| エコシステム | 低 | ⭐ |
+### 最適化のポイント
+
+1. **アーキタイプベースストレージ** - 同じ型のエンティティは連続配置
+2. **Extractorキャッシング** - 各型につき1つのExtractor（共有）
+3. **イテレータベースAPI** - アロケーションなし
+4. **スナップショット戦略** - 短時間のロック保持
+5. **細粒度ロック** - アーキタイプ単位の並行処理
 
 ---
 
@@ -1535,102 +624,36 @@ struct Agent {
 
 **理由:**
 
-#### (a) World全体のロック競合
+- **World全体のロック競合** - すべてのアーキタイプがロック
+- **柔軟性の喪失** - 細かいロック戦略を選択できない
+- **デッドロックのリスク** - RwLockは再入不可
 
-```rust
-// もしこんなAPIがあったら...
-for (id, mut player) in world.query_mut::<Player>() {
-    player.health += 10;
-    // ← この間、Worldが排他ロック
-    // ← 他のすべてのスレッドがブロック
-}
-```
-
-**問題:**
-
-- Worldの**すべてのアーキタイプ**が書き込みロック
-- 読み取りすらブロック
-- 並行性が完全に失われる
-
-#### (b) 柔軟性の喪失
-
-```rust
-// ユーザーが管理する場合
-struct Player {
-    name: String,            // 不変
-    health: AtomicU32,       // ロックフリー変更可能
-    inventory: Mutex<Vec<Item>>, // 必要な時だけロック
-}
-
-// 各フィールドで最適なロック戦略を選択できる
-```
-
-```rust
-// もしWorldがwrite APIを提供したら...
-for (id, mut player) in world.query_mut::<Player>() {
-    // Player全体が可変借用
-    // → 細かい制御不可能
-}
-```
-
-#### (c) デッドロックのリスク
-
-```rust
-// 危険なパターン
-let mut player = world.extract_component_mut::<Player>(&id1)?;
-// ← Player全体が書き込みロック
-
-let other = world.extract_component_mut::<Player>(&id2)?;
-// ← 同じアーキタイプに再度書き込みロック
-// ↓ デッドロック！（RwLockは再入不可）
-```
-
-**代替案（現在の設計）:**
+**代替案:**
 
 ```rust
 // ユーザーがロック粒度を制御
 let player = world.extract_component::<Mutex<PlayerState>>(&id)?;
 let mut state = player.lock().unwrap();
-// ← このPlayerのstateのみロック、他は無関係
 ```
 
 ### 2. スナップショット vs ライブビュー
 
 **判断:** クエリは**スナップショット**を返す。
 
-**トレードオフ:**
-
-| 方式 | メリット | デメリット |
-|------|---------|-----------|
-| スナップショット（採用） | ロック時間最小、デッドロックなし、クエリ中の追加OK | メモリ使用量、一貫性は時点スナップショット |
-| ライブビュー | メモリ効率、リアルタイム反映 | 長時間ロック、デッドロックリスク、並行性低下 |
-
 **採用理由:**
 
 - 並行処理を最優先
-- ゲームサーバーでは「少し前の状態」で十分（フレーム単位の遅延は許容）
-- メモリは比較的潤沢（参照カウントのコストは小さい）
+- ゲームサーバーでは「少し前の状態」で十分
+- メモリは比較的潤沢
 
 ### 3. 動的型抽出 vs コンパイル時型安全
 
 **判断:** 実行時の`TypeId`ベース抽出を採用。
 
-**トレードオフ:**
-
-```rust
-// structecs（実行時）
-let health = entity.extract::<u32>()?;  // Option<Acquirable<u32>>
-// ↑ 実行時に型が合わなければNone
-
-// 従来のECS（コンパイル時）
-fn system(query: Query<&Health, With<Player>>) { ... }
-// ↑ コンパイル時に型チェック、実行時エラーなし
-```
-
 **採用理由:**
 
 - 柔軟性（任意の型を動的に抽出可能）
-- 階層構造のサポート（ネストしたフィールドも抽出）
+- 階層構造のサポート
 - ユーザーが型を知らなくても良い（プラグインシステム等）
 
 **代償:**
@@ -1642,216 +665,35 @@ fn system(query: Query<&Health, With<Player>>) { ... }
 
 **現状:** エンティティ追加後、構造変更不可。
 
-```rust
-// ❌ 現在サポートされていない
-world.add_component::<Buff>(&player_id, buff);
-world.remove_component::<Debuff>(&player_id);
-```
-
 **理由:**
 
-#### (a) ポインタ無効化
-
-```rust
-let health = world.extract_component::<u32>(&id)?;
-// ↑ Playerアーキタイプ内のポインタ
-
-world.add_component::<Buff>(&id, buff);
-// ↓ PlayerBuffアーキタイプに移動
-// ↓ healthポインタが無効化！
-```
-
-#### (b) 実装複雑性
-
-- 世代番号管理が必要
-- Acquirableのvalidation
-- アーキタイプ間の移動コスト
-
-**将来の対応策（検討中）:**
-
-- 世代番号による無効化検出
-- `Acquirable::is_valid()` API
-- Copy-on-Write的な移動戦略
+- **ポインタ無効化** - アーキタイプ移動でAcquirableが無効化
+- **実装複雑性** - 世代番号管理が必要
 
 **現在の回避策:**
 
 ```rust
-// 最初から全コンポーネントを含める
 struct Player {
     health: u32,
     buff: Option<Buff>,  // ← Optionで表現
 }
 ```
 
+または**Additional Components**を使用。
+
 ### 5. unsafe コードの使用
 
 **使用箇所:**
 
-1. **ポインタ演算**（extractor.rs）
-
-```rust
-unsafe fn extract_ptr<T: 'static>(&self, data: NonNull<u8>) -> Option<NonNull<T>> {
-    let offset = self.offsets.get(&TypeId::of::<T>())?;
-    Some(NonNull::new_unchecked(data.as_ptr().add(*offset) as *mut T))
-}
-```
-
-2. **参照カウント操作**（entity.rs）
-
-```rust
-impl Clone for EntityDataInner {
-    fn clone(&self) -> Self {
-        unsafe { self.counter.as_ref().fetch_add(1, Ordering::Relaxed); }
-        // ...
-    }
-}
-```
-
-3. **型消去とドロップ**（entity.rs）
-
-```rust
-unsafe { (self.extractor.dropper)(self.data) };
-```
+1. ポインタ演算（extractor.rs）
+2. 参照カウント操作（entity.rs）
+3. 型消去とドロップ（entity.rs）
 
 **安全性の保証:**
 
 - ✅ **オフセット計算**: コンパイル時`offset_of!`で検証済み
-- ✅ **ポインタアライメント**: Rust のレイアウト保証に依存
 - ✅ **参照カウント**: Arc パターンを手動実装（well-tested）
-- ✅ **ドロップ**: Extractor生成時に型情報保持、正しいドロップ関数登録
-
-**監査状況:**
-
-- すべての`unsafe`ブロックにコメント
-- 将来的にMiriで検証予定
-
----
-
-## 今後の拡張方向
-
-### フェーズ1: 基盤実装 ✅ 完了
-
-- ✅ コアアーキテクチャ（World, Entity, Archetype）
-- ✅ 並行処理（DashMap + RwLock）
-- ✅ クエリシステム（query, par_query）
-- ✅ コンポーネント抽出（Extractable derive macro）
-- ✅ メモリ管理（参照カウント、安全なDrop）
-
-### フェーズ2: パフォーマンス最適化 ✅ 完了
-
-- ✅ Extractorキャッシング
-- ✅ スナップショット戦略によるロック最適化
-- ✅ 並列クエリ（Rayon統合）
-- ✅ ゼロコスト抽象化（コンパイル時オフセット計算）
-
-### フェーズ3: 品質保証 ✅ 完了
-
-- ✅ **69個の統合テスト** - 全パス、警告ゼロ
-- ✅ **並行処理テスト** - 10-100スレッドで検証
-- ✅ **メモリ安全性テスト** - 50,000エンティティサイクル
-- ✅ **エッジケーステスト** - Unicode、境界値、空操作
-- ✅ **Additional Components** - CRUD操作、クエリ統合完了
-- ✅ **ドキュメント整備** - README.md、Architecture.md
-
-### フェーズ4: 検証と最適化（現在）
-
-**短期タスク（優先度：高）**
-
-1. **Miri検証**
-
-   ```bash
-   cargo +nightly miri test
-   ```
-
-   - 未定義動作の検出
-   - unsafeコードの安全性確認
-   - メモリアクセスの妥当性検証
-
-2. **ベンチマーク拡充**
-   - 他のECSライブラリとの比較（Bevy, specs, hecs）
-   - 各種操作のマイクロベンチマーク
-   - スケーラビリティ測定（エンティティ数 vs パフォーマンス）
-
-3. **サンプル充実**
-   - 実践的なゲームサーバーの例
-   - 物理シミュレーションの例
-   - マルチスレッドパターンのベストプラクティス
-
-**中期タスク（検討中）**
-
-4. **パフォーマンスプロファイリング**
-   - Flamegraph解析
-   - ボトルネック特定
-   - キャッシュヒット率測定
-
-5. **ドキュメント強化**
-   - Doctestの追加
-   - チュートリアル作成
-   - パフォーマンスチューニングガイド
-
-6. **API改善（破壊的変更なし）**
-   - エラーハンドリングの洗練
-   - イテレータAPIの拡張
-   - デバッグ機能の追加
-
-### フェーズ5: エコシステム構築（長期）
-
-**将来的な拡張（研究段階）**
-
-7. **イベントシステム（オプション）**
-
-   ```rust
-   world.on_entity_added::<Player>(|id, player| {
-       log::info!("Player {} joined!", player.name);
-   });
-   ```
-
-8. **クエリキャッシング**
-   - LRUキャッシュによる高速化
-   - 世代番号による無効化
-   - ホットパスの最適化
-
-9. **SIMD最適化**
-   - 数値計算のバッチ処理
-   - アーキタイプストレージの最適化
-   - プラットフォーム固有の最適化
-
-10. **シリアライゼーション**
-    - エンティティの保存/復元
-    - ネットワーク転送対応
-    - セーブデータ管理
-
-### 非対応機能（設計思想により）
-
-以下の機能は**意図的にサポートしない**方針です：
-
-❌ **Query Builder** - struct単位の管理により不要  
-❌ **Component追加/削除** - アーキタイプ変更の複雑性を回避  
-❌ **System強制** - ユーザーの自由度を優先  
-❌ **グローバルWorld** - 明示的な依存注入を推奨  
-
-### リリース計画
-
-**v0.1.0（現在）**
-
-- コア機能完成
-- Additional Components実装
-- 69テスト全パス
-- 基本ドキュメント整備
-
-**v0.2.0（次期）**
-
-- Miri検証完了
-- ベンチマーク結果公開
-- サンプルコード追加
-- パフォーマンスチューニング
-
-**v1.0.0（安定版）**
-
-- API凍結
-- 本番環境での実績
-- 完全なドキュメント
-- crates.io公開
+- ✅ **ドロップ**: Extractor生成時に型情報保持
 
 ---
 
@@ -1866,23 +708,12 @@ structecsは、**階層的データ構造**と**高並行性**を両立させる
 3. **細粒度ロック** - アーキタイプ単位の並行処理
 4. **Systemの押し付けなし** - 自由なロジック記述
 
-### 開発状況
-
-**✅ 本番準備完了（Production Ready）**
-
-- ✅ **コア機能** - World、Entity、Query、Extract、Additional すべて実装完了
-- ✅ **69テスト全パス** - 統合、並行、メモリ安全性、エッジケース
-- ✅ **ゼロ警告** - Clippy・Rustc警告なし
-- ✅ **ドキュメント完備** - README.md、Architecture.md、コード内ドキュメント
-- ✅ **パフォーマンス検証済み** - 10,000エンティティ、100スレッド並行
-
 ### 向いているプロジェクト
 
 - ✅ 複雑なゲームサーバー（Minecraft, MMO）
 - ✅ 階層的エンティティ構造
 - ✅ 高並行処理要求
 - ✅ 柔軟なロジック記述
-- ✅ 数千〜数万エンティティの管理
 
 ### 向いていないプロジェクト
 
@@ -1891,55 +722,6 @@ structecsは、**階層的データ構造**と**高並行性**を両立させる
 - ❌ 既存ECSエコシステムに依存
 - ❌ 完全なコンパイル時型安全性が必須
 
-### 次のステップ
-
-**すぐに始められること:**
-
-```rust
-// 1. Cargo.toml に追加
-[dependencies]
-structecs = { path = "structecs" }
-
-// 2. エンティティを定義
-#[derive(Extractable)]
-struct Player {
-    name: String,
-    health: AtomicU32,
-}
-
-// 3. Worldを作成して使う
-let world = World::default();
-let id = world.add_entity(Player { /* ... */ });
-for (id, player) in world.query::<Player>() {
-    // 並行安全なアクセス
-}
-```
-
-**検証・最適化:**
-
-1. `cargo test` - 全テスト実行
-2. `cargo bench` - ベンチマーク測定
-3. `cargo +nightly miri test` - メモリ安全性検証（推奨）
-
-### 技術的特徴まとめ
-
-| 特徴 | 実装 | ステータス |
-|------|------|-----------|
-| 階層的コンポーネント | Extractable derive macro | ✅ 完成 |
-| 並行エンティティ追加 | DashMap + RwLock | ✅ 完成 |
-| 並列クエリ | Rayon par_iter | ✅ 完成 |
-| メモリ安全性 | 参照カウント + Drop | ✅ 検証済み |
-| スレッドセーフティ | 100スレッドテスト | ✅ 検証済み |
-| ゼロコスト抽象化 | コンパイル時オフセット | ✅ 完成 |
-| ドキュメント | README + Architecture | ✅ 完備 |
-
-structecsは、**データ指向設計の性能**と**オブジェクト指向の表現力**を融合させた、実用的なフレームワークです。
-
-**現在のバージョン**: v0.1.0（本番準備完了）  
-**ライセンス**: MIT  
-**貢献**: Issue、PRを歓迎します  
-**サポート**: AGENTS.mdに記載された方針で対応します
-
 ---
 
-*このドキュメントは、structecsの設計思想・実装詳細・使用ガイドを包括的に説明しています。質問や改善提案があれば、GitHubのIssueでお知らせください。*
+*このドキュメントは、structecsの設計思想・実装詳細を説明しています。詳細なテスト情報は`cargo test`で確認してください。*
