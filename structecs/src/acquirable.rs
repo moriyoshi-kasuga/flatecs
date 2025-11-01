@@ -7,7 +7,7 @@ use crate::entity::EntityData;
 /// Implements `Deref` for transparent access to the component.
 pub struct Acquirable<T: 'static> {
     target: NonNull<T>,
-    inner: EntityData,
+    pub(crate) inner: EntityData,
 }
 
 impl<T: 'static> AsRef<T> for Acquirable<T> {

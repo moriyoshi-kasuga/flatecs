@@ -81,6 +81,58 @@ impl World {
         entity_id
     }
 
+    /// Add multiple entities to the world in batch.
+    ///
+    /// Returns a Vec of EntityIds assigned to the entities in order.
+    ///
+    /// This method is optimized for bulk insertion by:
+    /// - Pre-allocating entity IDs in a single atomic operation
+    /// - Getting the archetype once for all entities
+    /// - Minimizing index update overhead
+    ///
+    /// # Performance
+    ///
+    /// For adding many entities of the same type, this method is significantly faster
+    /// than calling `add_entity()` repeatedly due to reduced atomic operations and
+    /// archetype lookups.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe and can be called concurrently from multiple threads.
+    pub fn add_entities<E: Extractable>(
+        &self,
+        entities: impl IntoIterator<Item = E>,
+    ) -> Vec<EntityId> {
+        let entities: Vec<E> = entities.into_iter().collect();
+        let count = entities.len();
+
+        if count == 0 {
+            return Vec::new();
+        }
+
+        // Pre-allocate entity IDs in bulk (single atomic operation)
+        let start_id = self
+            .next_entity_id
+            .fetch_add(count as u32, Ordering::Relaxed);
+
+        // Get archetype once for all entities
+        let archetype_id = ArchetypeId::of::<E>();
+        let archetype = self.get_archetype::<E>();
+
+        // Pre-allocate result Vec
+        let mut entity_ids = Vec::with_capacity(count);
+
+        // Add all entities
+        for (i, entity) in entities.into_iter().enumerate() {
+            let entity_id = EntityId::new(start_id + i as u32);
+            archetype.add_entity(entity_id, entity);
+            self.entity_index.insert(entity_id, archetype_id);
+            entity_ids.push(entity_id);
+        }
+
+        entity_ids
+    }
+
     pub fn add_additional<E: Extractable>(&self, entity_id: &EntityId, entity: E) -> bool {
         let data = match self.get_entity_data(entity_id) {
             Some(d) => d,
@@ -143,18 +195,16 @@ impl World {
     /// locked independently and briefly, minimizing contention.
     pub fn query<T: 'static>(&self) -> Vec<(EntityId, Acquirable<T>)> {
         let mut results = Vec::new();
-        
+
         for entry in self.archetypes.iter() {
             let archetype = entry.value();
             if archetype.has_component::<T>() {
                 results.extend(archetype.iter_component::<T>());
             }
         }
-        
+
         results
     }
-
-
 
     /// Get the number of entities in the world.
     pub fn entity_count(&self) -> usize {
@@ -211,8 +261,7 @@ impl<'w, T: 'static, A: AdditionalTuple> QueryWith<'w, T, A> {
             .query::<T>()
             .into_iter()
             .map(|(id, base)| {
-                let data = self.world.get_entity_data(&id).unwrap();
-                let additionals = A::extract_from(&data);
+                let additionals = A::extract_from(&base.inner);
                 (id, base, additionals)
             })
             .collect()

@@ -381,3 +381,75 @@ fn test_archetype_count() {
 
     assert_eq!(world.archetype_count(), 2);
 }
+
+#[test]
+fn test_add_entities_batch() {
+    let world = World::new();
+
+    let entities: Vec<Player> = (0..10)
+        .map(|i| Player {
+            name: format!("Player{}", i),
+            health: 100,
+            level: i,
+        })
+        .collect();
+
+    let ids = world.add_entities(entities);
+    assert_eq!(ids.len(), 10);
+    assert_eq!(world.entity_count(), 10);
+
+    // Verify all entities can be queried
+    let players = world.query::<Player>();
+    assert_eq!(players.len(), 10);
+}
+
+#[test]
+fn test_add_entities_empty() {
+    let world = World::new();
+
+    let entities: Vec<Player> = vec![];
+    let ids = world.add_entities(entities);
+
+    assert_eq!(ids.len(), 0);
+    assert_eq!(world.entity_count(), 0);
+}
+
+#[test]
+fn test_add_entities_sequential_ids() {
+    let world = World::new();
+
+    let entities: Vec<Player> = (0..5)
+        .map(|i| Player {
+            name: format!("Player{}", i),
+            health: 100,
+            level: i,
+        })
+        .collect();
+
+    let ids = world.add_entities(entities);
+
+    // IDs should be sequential
+    for i in 1..ids.len() {
+        assert_eq!(ids[i].id(), ids[i - 1].id() + 1);
+    }
+}
+
+#[test]
+fn test_add_entities_large_batch() {
+    let world = World::new();
+
+    let entities: Vec<Player> = (0..10_000)
+        .map(|i| Player {
+            name: format!("Player{}", i),
+            health: 100,
+            level: i,
+        })
+        .collect();
+
+    let ids = world.add_entities(entities);
+    assert_eq!(ids.len(), 10_000);
+    assert_eq!(world.entity_count(), 10_000);
+
+    let players = world.query::<Player>();
+    assert_eq!(players.len(), 10_000);
+}
