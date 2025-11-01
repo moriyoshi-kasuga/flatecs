@@ -1,20 +1,20 @@
 use flatecs::*;
 
+#[derive(Debug, Extractable)]
+pub struct Entity {
+    pub name: String,
+}
+
+// Example entity
+#[derive(Debug, Extractable)]
+#[extractable(entity)]
+pub struct Player {
+    pub entity: Entity,
+    pub health: u32,
+}
+
 fn main() {
     let mut world = World::default();
-
-    #[derive(Debug, Extractable)]
-    struct Entity {
-        name: String,
-    }
-
-    // Example entity
-    #[derive(Debug, Extractable)]
-    #[extractable(entity)]
-    struct Player {
-        entity: Entity,
-        health: u32,
-    }
 
     let zombie = Entity {
         name: "Zombie".to_string(),
@@ -32,10 +32,9 @@ fn main() {
     world.add_entity(player);
 
     for (_, entity) in world.query::<Entity>() {
-        println!("{:?}", entity);
-    }
-
-    for (_, player) in world.query::<Player>() {
-        println!("{:?}", player);
+        println!("Entity: {:?}", *entity);
+        if let Some(player) = entity.extract::<Player>() {
+            println!("  As Player: {:?}", *player);
+        }
     }
 }

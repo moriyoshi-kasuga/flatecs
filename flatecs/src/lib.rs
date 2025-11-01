@@ -1,4 +1,14 @@
-use std::{any::TypeId, collections::HashMap, hash::Hash, ptr::NonNull, sync::Arc};
+use std::{
+    any::TypeId,
+    collections::HashMap,
+    hash::Hash,
+    ops::Deref,
+    ptr::NonNull,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
 pub use flatecs_macros::Extractable;
 
@@ -71,8 +81,40 @@ pub trait Extractable: 'static + Sized {
     const METADATA_LIST: &'static [ExtractionMetadata];
 }
 
+pub struct Acquirable<T: 'static> {
+    target: NonNull<T>,
+    inner: EntityDataInner,
+    marker: std::marker::PhantomData<T>,
+}
+
+impl<T: 'static> AsRef<T> for Acquirable<T> {
+    fn as_ref(&self) -> &T {
+        unsafe { self.target.as_ref() }
+    }
+}
+
+impl<T: 'static> Deref for Acquirable<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+impl<T: 'static> Acquirable<T> {
+    pub fn extract<U: 'static>(&self) -> Option<Acquirable<U>> {
+        let extracted = unsafe { self.inner.extract_ptr::<U>()? };
+        Some(Acquirable {
+            target: extracted,
+            inner: self.inner.clone(),
+            marker: std::marker::PhantomData,
+        })
+    }
+}
+
 struct EntityDataInner {
     data: NonNull<u8>,
+    counter: NonNull<AtomicUsize>,
     extractor: Arc<Extractor>,
 }
 
@@ -81,42 +123,58 @@ unsafe impl Sync for EntityDataInner {}
 
 impl Drop for EntityDataInner {
     fn drop(&mut self) {
+        unsafe {
+            if self.counter.as_ref().fetch_sub(1, Ordering::Release) > 1 {
+                return;
+            }
+        }
+        std::sync::atomic::fence(Ordering::Acquire);
         unsafe { (self.extractor.dropper)(self.data) };
+        unsafe { drop(Box::from_raw(self.counter.as_ptr())) };
     }
 }
 
 impl Clone for EntityDataInner {
     fn clone(&self) -> Self {
+        unsafe {
+            self.counter.as_ref().fetch_add(1, Ordering::Relaxed);
+        }
         Self {
             data: self.data,
+            counter: self.counter,
             extractor: Arc::clone(&self.extractor),
         }
     }
 }
 
 impl EntityDataInner {
-    fn extract<T: 'static>(&self) -> Option<&T> {
-        self.extractor.extract::<T>(self.data)
+    unsafe fn extract_ptr<T: 'static>(&self) -> Option<NonNull<T>> {
+        unsafe { self.extractor.extract_ptr::<T>(self.data) }
     }
 }
 
 pub struct EntityData {
-    inner: Arc<EntityDataInner>,
+    inner: EntityDataInner,
 }
 
 impl EntityData {
     pub(crate) fn new<E: Extractable>(entity: E, extractor: Arc<Extractor>) -> Self {
         let ptr = Box::into_raw(Box::new(entity)) as *mut u8;
-        Self {
-            inner: Arc::new(EntityDataInner {
-                data: unsafe { NonNull::new_unchecked(ptr) },
-                extractor,
-            }),
-        }
+        let inner = EntityDataInner {
+            data: unsafe { NonNull::new_unchecked(ptr) },
+            counter: Box::leak(Box::new(AtomicUsize::new(1))).into(),
+            extractor,
+        };
+        Self { inner }
     }
 
-    pub fn extract<T: 'static>(&self) -> Option<&T> {
-        self.inner.extract::<T>()
+    pub fn extract<T: 'static>(&self) -> Option<Acquirable<T>> {
+        let extracted = unsafe { self.inner.extract_ptr::<T>()? };
+        Some(Acquirable {
+            target: extracted,
+            inner: self.inner.clone(),
+            marker: std::marker::PhantomData,
+        })
     }
 }
 
@@ -143,6 +201,25 @@ impl Extractor {
         let ptr = unsafe { data.as_ptr().add(*offset) as *const T };
         Some(unsafe { &*ptr })
     }
+
+    /// # Safety
+    /// This function assumes that the type T is present in the extractor's offsets.
+    pub unsafe fn extract_ptr<T: 'static>(&self, data: NonNull<u8>) -> Option<NonNull<T>> {
+        let type_id = TypeId::of::<T>();
+        let offset = self.offsets.get(&type_id)?;
+        Some(unsafe { data.add(*offset).cast::<T>() })
+    }
+
+    /// # Safety
+    /// This function assumes that the type T is present in the extractor's offsets.
+    pub unsafe fn extract_unchecked<T: 'static>(&self, data: NonNull<u8>) -> &T {
+        let type_id = TypeId::of::<T>();
+        let offset = self.offsets.get(&type_id).unwrap();
+        unsafe {
+            let ptr = data.as_ptr().add(*offset) as *const T;
+            &*ptr
+        }
+    }
 }
 
 #[derive(Default)]
@@ -153,7 +230,7 @@ pub struct World {
 }
 
 impl World {
-    pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) -> Option<&T> {
+    pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
         let entity_data = self.entities.get(entity_id)?;
         entity_data.extract::<T>()
     }
@@ -177,7 +254,7 @@ impl World {
         entity_id
     }
 
-    pub fn query<T: 'static>(&self) -> Vec<(&EntityId, &T)> {
+    pub fn query<T: 'static>(&self) -> Vec<(&EntityId, Acquirable<T>)> {
         let mut results = Vec::new();
         for (entity_id, entity_data) in &self.entities {
             if let Some(component) = entity_data.extract::<T>() {
