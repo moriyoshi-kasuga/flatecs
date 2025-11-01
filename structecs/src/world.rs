@@ -1,20 +1,14 @@
-use std::{
-    any::TypeId,
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
 };
 
 use dashmap::DashMap;
-use parking_lot::RwLock;
 use rayon::prelude::*;
 
 use crate::{
     Acquirable, EntityId, Extractable,
     archetype::{Archetype, ArchetypeId},
-    entity::EntityData,
-    extractor::Extractor,
 };
 
 /// The central storage for all entities and their components.
@@ -30,11 +24,8 @@ use crate::{
 /// - Query and add entities simultaneously (queries snapshot archetypes)
 #[derive(Default)]
 pub struct World {
-    /// Archetypes indexed by their TypeId, with per-archetype RwLocks for fine-grained concurrency.
-    archetypes: DashMap<ArchetypeId, Arc<RwLock<Archetype>>>,
-
-    /// Cached extractors for each entity type (lock-free concurrent access).
-    extractors: DashMap<TypeId, Arc<Extractor>>,
+    /// Archetypes indexed by their TypeId
+    archetypes: DashMap<ArchetypeId, Arc<Archetype>>,
 
     /// Maps entity IDs to their archetype for fast lookup (lock-free concurrent access).
     entity_index: DashMap<EntityId, ArchetypeId>,
@@ -49,22 +40,12 @@ impl World {
         Self::default()
     }
 
-    /// Get or create an extractor for type E.
-    fn get_extractor<E: Extractable>(&self) -> Arc<Extractor> {
-        let type_id = TypeId::of::<E>();
-        self.extractors
-            .entry(type_id)
-            .or_insert_with(|| Arc::new(Extractor::new::<E>()))
-            .clone()
-    }
-
     /// Get or create an archetype for type E.
-    fn get_archetype<E: Extractable>(&self) -> Arc<RwLock<Archetype>> {
+    fn get_archetype<E: Extractable>(&self) -> Arc<Archetype> {
         let archetype_id = ArchetypeId::of::<E>();
-        let extractor = self.get_extractor::<E>();
         self.archetypes
             .entry(archetype_id)
-            .or_insert_with(|| Arc::new(RwLock::new(Archetype::new(extractor))))
+            .or_insert_with(|| Arc::new(Archetype::new::<E>()))
             .clone()
     }
 
@@ -78,14 +59,10 @@ impl World {
         // Generate entity ID atomically
         let entity_id = EntityId::new(self.next_entity_id.fetch_add(1, Ordering::Relaxed));
 
-        let extractor = self.get_extractor::<E>();
-        let entity_data = EntityData::new(entity, extractor);
-
         let archetype_id = ArchetypeId::of::<E>();
         let archetype = self.get_archetype::<E>();
 
-        // Lock the archetype only for the duration of adding the entity
-        archetype.write().add_entity(entity_id, entity_data);
+        archetype.add_entity(entity_id, entity);
 
         // Update the entity index (lock-free)
         self.entity_index.insert(entity_id, archetype_id);
@@ -97,9 +74,7 @@ impl World {
     pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
         let archetype_id = *self.entity_index.get(entity_id)?;
         let archetype = self.archetypes.get(&archetype_id)?;
-        let guard = archetype.read();
-        let entity_data = guard.get_entity(entity_id)?;
-        entity_data.extract::<T>()
+        archetype.extract_entity(entity_id)
     }
 
     /// Remove an entity from the world.
@@ -111,8 +86,10 @@ impl World {
             None => return false,
         };
 
-        if let Some(archetype) = self.archetypes.get(&archetype_id) {
-            archetype.write().remove_entity(entity_id).is_some()
+        if let Some(archetype) = self.archetypes.get(&archetype_id)
+            && let Some(_) = archetype.remove_entity(entity_id)
+        {
+            true
         } else {
             false
         }
@@ -139,15 +116,10 @@ impl World {
         self.archetypes
             .iter()
             .filter_map(|entry| {
-                let archetype = entry.value().read();
+                let archetype = entry.value();
                 if archetype.has_component::<T>() {
                     // Snapshot this archetype's data while holding the lock
-                    Some(
-                        archetype
-                            .iter_component::<T>()
-                            .map(|(id, comp)| (*id, comp))
-                            .collect::<Vec<_>>(),
-                    )
+                    Some(archetype.iter_component::<T>().collect::<Vec<_>>())
                 } else {
                     None
                 }
@@ -196,15 +168,10 @@ impl World {
             .iter()
             .par_bridge()
             .filter_map(|entry| {
-                let archetype = entry.value().read();
+                let archetype = entry.value();
                 if archetype.has_component::<T>() {
                     // Snapshot this archetype's data while holding the lock
-                    Some(
-                        archetype
-                            .iter_component::<T>()
-                            .map(|(id, comp)| (*id, comp))
-                            .collect::<Vec<_>>(),
-                    )
+                    Some(archetype.iter_component::<T>().collect::<Vec<_>>())
                 } else {
                     None
                 }

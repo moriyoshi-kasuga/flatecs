@@ -1,6 +1,8 @@
 use std::{any::TypeId, sync::Arc};
 
-use crate::{Acquirable, EntityId, entity::EntityData, extractor::Extractor};
+use dashmap::DashMap;
+
+use crate::{Acquirable, EntityId, Extractable, entity::EntityData, extractor::Extractor};
 
 /// An archetype represents a unique combination of component types.
 /// All entities with the same structure share an archetype.
@@ -9,20 +11,20 @@ pub struct Archetype {
     pub(crate) extractor: Arc<Extractor>,
 
     /// Entities stored in this archetype.
-    pub(crate) entities: Vec<(EntityId, EntityData)>,
+    pub(crate) entities: DashMap<EntityId, EntityData>,
 }
 
 impl Archetype {
-    pub(crate) fn new(extractor: Arc<Extractor>) -> Self {
+    pub(crate) fn new<E: Extractable>() -> Self {
         Self {
-            extractor,
-            entities: Vec::new(),
+            extractor: Arc::new(Extractor::new::<E>()),
+            entities: DashMap::new(),
         }
     }
 
-    /// Add an entity to this archetype.
-    pub(crate) fn add_entity(&mut self, id: EntityId, data: EntityData) {
-        self.entities.push((id, data));
+    pub(crate) fn add_entity<E: Extractable>(&self, id: EntityId, entity: E) {
+        let data = EntityData::new(entity, self.extractor.clone());
+        self.entities.insert(id, data);
     }
 
     /// Check if this archetype can provide component type T.
@@ -34,39 +36,24 @@ impl Archetype {
     /// Iterate over entities that have component T.
     pub(crate) fn iter_component<T: 'static>(
         &self,
-    ) -> impl Iterator<Item = (&EntityId, Acquirable<T>)> + '_ {
-        self.entities.iter().filter_map(|(id, data)| {
+    ) -> impl Iterator<Item = (EntityId, Acquirable<T>)> {
+        self.entities.iter().filter_map(|v| {
+            let (id, data) = v.pair();
             let component = data.extract::<T>()?;
-            Some((id, component))
+            Some((*id, component))
         })
     }
 
     /// Get entity data by ID.
-    pub(crate) fn get_entity(&self, entity_id: &EntityId) -> Option<&EntityData> {
+    pub(crate) fn extract_entity<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
         self.entities
-            .iter()
-            .find(|(id, _)| id == entity_id)
-            .map(|(_, data)| data)
+            .get(entity_id)
+            .and_then(|data| data.extract::<T>())
     }
 
     /// Remove an entity by ID.
-    pub(crate) fn remove_entity(&mut self, entity_id: &EntityId) -> Option<EntityData> {
-        let pos = self.entities.iter().position(|(id, _)| id == entity_id)?;
-        Some(self.entities.swap_remove(pos).1)
-    }
-
-    /// Get the number of entities in this archetype.
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn len(&self) -> usize {
-        self.entities.len()
-    }
-
-    /// Check if this archetype is empty.
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entities.is_empty()
+    pub(crate) fn remove_entity(&self, entity_id: &EntityId) -> Option<EntityData> {
+        self.entities.remove(entity_id).map(|(_, data)| data)
     }
 }
 
