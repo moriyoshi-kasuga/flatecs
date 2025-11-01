@@ -26,22 +26,34 @@ impl EntityId {
 }
 
 /// Internal reference-counted data for an entity.
-pub(crate) struct EntityData {
+pub(crate) struct EntityDataInner {
     pub(crate) data: NonNull<u8>,
-    pub(crate) counter: NonNull<AtomicUsize>,
+    pub(crate) counter: AtomicUsize,
     pub(crate) extractor: Arc<Extractor>,
+}
+
+#[repr(transparent)]
+pub(crate) struct EntityData {
+    inner: NonNull<EntityDataInner>,
 }
 
 unsafe impl Send for EntityData {}
 unsafe impl Sync for EntityData {}
 
 impl EntityData {
+    pub(crate) fn inner(&self) -> &EntityDataInner {
+        unsafe { self.inner.as_ref() }
+    }
+
     pub(crate) fn new<E: crate::Extractable>(entity: E, extractor: Arc<Extractor>) -> Self {
         let ptr = Box::into_raw(Box::new(entity)) as *mut u8;
-        Self {
+        let inner = EntityDataInner {
             data: unsafe { NonNull::new_unchecked(ptr) },
-            counter: Box::leak(Box::new(AtomicUsize::new(1))).into(),
+            counter: AtomicUsize::new(1),
             extractor,
+        };
+        Self {
+            inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(inner))) },
         }
     }
 
@@ -51,34 +63,31 @@ impl EntityData {
     }
 
     pub(crate) unsafe fn extract_ptr<T: 'static>(&self) -> Option<NonNull<T>> {
-        unsafe { self.extractor.extract_ptr::<T>(self.data) }
+        unsafe { self.inner().extractor.extract_ptr::<T>(self.inner().data) }
     }
 }
 
 impl Drop for EntityData {
     fn drop(&mut self) {
-        unsafe {
-            if self.counter.as_ref().fetch_sub(1, Ordering::Release) > 1 {
-                return;
-            }
+        let inner = self.inner();
+        if inner.counter.fetch_sub(1, Ordering::Release) > 1 {
+            return;
         }
+
         std::sync::atomic::fence(Ordering::Acquire);
-        unsafe { (self.extractor.dropper)(self.data) };
+
+        unsafe { (inner.extractor.dropper)(inner.data) };
         unsafe {
-            core::ptr::drop_in_place(self.counter.as_ptr());
+            let inner = Box::from_raw(self.inner.as_ptr());
+            drop(inner);
         }
     }
 }
 
 impl Clone for EntityData {
     fn clone(&self) -> Self {
-        unsafe {
-            self.counter.as_ref().fetch_add(1, Ordering::Relaxed);
-        }
-        Self {
-            data: self.data,
-            counter: self.counter,
-            extractor: Arc::clone(&self.extractor),
-        }
+        self.inner().counter.fetch_add(1, Ordering::Relaxed);
+
+        Self { inner: self.inner }
     }
 }
