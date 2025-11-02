@@ -33,9 +33,7 @@ impl Extractor {
         Some(unsafe { data.add(*offset).cast::<T>() })
     }
 
-    /// Check if this extractor can extract a component of type T.
-    #[inline]
-    pub fn has_component<T: 'static>(&self) -> bool {
-        self.offsets.contains_key(&TypeId::of::<T>())
+    pub(crate) fn type_ids(&self) -> impl Iterator<Item = &TypeId> {
+        self.offsets.keys()
     }
 }

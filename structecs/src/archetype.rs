@@ -28,12 +28,6 @@ impl Archetype {
         data
     }
 
-    /// Check if this archetype can provide component type T.
-    #[inline]
-    pub(crate) fn has_component<T: 'static>(&self) -> bool {
-        self.extractor.has_component::<T>()
-    }
-
     /// Iterate over entities that have component T.
     pub(crate) fn iter_component<T: 'static>(
         &self,
