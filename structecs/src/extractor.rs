@@ -1,10 +1,12 @@
-use std::{any::TypeId, collections::HashMap, ptr::NonNull};
+use std::{any::TypeId, ptr::NonNull};
+
+use rustc_hash::FxHashMap;
 
 use crate::{Extractable, ExtractionMetadata};
 
 /// Extracts components from entity data using pre-computed offsets.
 pub struct Extractor {
-    pub(crate) offsets: HashMap<TypeId, usize>,
+    pub(crate) offsets: FxHashMap<TypeId, usize>,
     pub(crate) dropper: unsafe fn(NonNull<u8>),
 }
 

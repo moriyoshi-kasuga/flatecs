@@ -10,6 +10,7 @@ workspace = true
 dashmap = "6.1"
 enum-table = "2.1"
 parking_lot = "0.12"
+rustc-hash = "2.1"
 structecs-macros = { path = "../structecs-macros" }
 
 [dev-dependencies]
