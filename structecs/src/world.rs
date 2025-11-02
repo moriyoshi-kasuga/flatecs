@@ -311,7 +311,8 @@ impl World {
 
         // Collect from all matching archetypes
         for archetype in matching {
-            results.extend(archetype.iter_component::<T>());
+            // Safety: We know the archetype contains T from the type index
+            results.extend(unsafe { archetype.iter_component_unchecked::<T>() });
         }
 
         results

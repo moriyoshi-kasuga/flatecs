@@ -27,10 +27,14 @@ impl Extractor {
     ///
     /// # Safety
     /// The caller must ensure the pointer is used correctly and not outlive the entity data.
-    pub unsafe fn extract_ptr<T: 'static>(&self, data: NonNull<u8>) -> Option<NonNull<T>> {
+    pub(crate) unsafe fn extract_ptr<T: 'static>(&self, data: NonNull<u8>) -> Option<NonNull<T>> {
         let type_id = TypeId::of::<T>();
         let offset = self.offsets.get(&type_id)?;
         Some(unsafe { data.add(*offset).cast::<T>() })
+    }
+
+    pub(crate) fn offset(&self, type_id: &TypeId) -> Option<usize> {
+        self.offsets.get(type_id).copied()
     }
 
     pub(crate) fn type_ids(&self) -> impl Iterator<Item = &TypeId> {

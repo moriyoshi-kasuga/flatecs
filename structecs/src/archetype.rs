@@ -29,13 +29,14 @@ impl Archetype {
     }
 
     /// Iterate over entities that have component T.
-    pub(crate) fn iter_component<T: 'static>(
+    pub(crate) unsafe fn iter_component_unchecked<T: 'static>(
         &self,
     ) -> impl Iterator<Item = (EntityId, Acquirable<T>)> {
-        self.entities.iter().filter_map(|v| {
+        let offset = unsafe { self.extractor.offset(&TypeId::of::<T>()).unwrap_unchecked() };
+        self.entities.iter().map(move |v| {
             let (id, data) = v.pair();
-            let component = data.extract::<T>()?;
-            Some((*id, component))
+            let component = unsafe { data.extract_by_offset::<T>(offset) };
+            (*id, component)
         })
     }
 

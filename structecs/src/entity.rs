@@ -46,17 +46,17 @@ impl std::fmt::Display for EntityId {
 pub(crate) struct EntityDataInner {
     /// Reference counter - placed first and aligned to cache line for optimal concurrent access
     pub(crate) counter: AtomicUsize,
-    
+
     /// Padding to separate counter from other fields (prevents false sharing)
     /// Modern CPUs typically use 64-byte cache lines
     _pad: [u8; 56],
-    
+
     /// Pointer to the entity data
     pub(crate) data: NonNull<u8>,
-    
+
     /// Extractor for component access
     pub(crate) extractor: Arc<Extractor>,
-    
+
     /// Additional components (optional runtime data)
     #[allow(clippy::type_complexity)]
     pub(crate) additional: RwLock<Vec<(TypeId, NonNull<u8>, Arc<Extractor>)>>,
@@ -87,6 +87,15 @@ impl EntityData {
         Self {
             inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(inner))) },
         }
+    }
+
+    pub(crate) unsafe fn extract_by_offset<T: 'static>(
+        &self,
+        offset: usize,
+    ) -> crate::Acquirable<T> {
+        let data_ptr = self.inner().data;
+        let extracted = unsafe { data_ptr.add(offset).cast::<T>() };
+        crate::Acquirable::new(extracted, self.clone())
     }
 
     pub(crate) fn extract<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
