@@ -8,6 +8,7 @@ use std::{
 };
 
 use dashmap::DashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::{
     Acquirable, EntityId, Extractable,
@@ -35,14 +36,14 @@ use crate::{
 #[derive(Default)]
 pub struct World {
     /// Archetypes indexed by their TypeId
-    archetypes: DashMap<ArchetypeId, Arc<Archetype>>,
+    archetypes: DashMap<ArchetypeId, Arc<Archetype>, FxBuildHasher>,
 
     /// Maps entity IDs to their archetype for fast lookup (lock-free concurrent access).
-    entity_index: DashMap<EntityId, ArchetypeId>,
+    entity_index: DashMap<EntityId, ArchetypeId, FxBuildHasher>,
 
     /// Type index: maps component TypeId to archetypes that contain it
     /// This cache dramatically speeds up queries when there are many archetypes
-    type_index: DashMap<TypeId, Vec<ArchetypeId>>,
+    type_index: DashMap<TypeId, Vec<ArchetypeId>, FxBuildHasher>,
 
     /// Next entity ID to assign (atomic for lock-free ID generation).
     next_entity_id: AtomicU32,
@@ -226,10 +227,8 @@ impl World {
     ///
     /// This method is thread-safe and can be called concurrently from multiple threads.
     pub fn remove_entities(&self, entity_ids: &[EntityId]) -> usize {
-        use std::collections::HashMap;
-
         // Group entity IDs by archetype
-        let mut archetype_groups: HashMap<ArchetypeId, Vec<EntityId>> = HashMap::new();
+        let mut archetype_groups: FxHashMap<ArchetypeId, Vec<EntityId>> = FxHashMap::default();
 
         for entity_id in entity_ids {
             if let Some((_, archetype_id)) = self.entity_index.remove(entity_id) {

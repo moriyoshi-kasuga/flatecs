@@ -1,6 +1,7 @@
 use std::{any::TypeId, sync::Arc};
 
 use dashmap::DashMap;
+use rustc_hash::FxBuildHasher;
 
 use crate::{Acquirable, EntityId, Extractable, entity::EntityData, extractor::Extractor};
 
@@ -11,14 +12,14 @@ pub struct Archetype {
     pub(crate) extractor: Arc<Extractor>,
 
     /// Entities stored in this archetype.
-    pub(crate) entities: DashMap<EntityId, EntityData>,
+    pub(crate) entities: DashMap<EntityId, EntityData, FxBuildHasher>,
 }
 
 impl Archetype {
     pub(crate) fn new<E: Extractable>() -> Self {
         Self {
             extractor: Arc::new(Extractor::new::<E>()),
-            entities: DashMap::new(),
+            entities: DashMap::with_hasher(FxBuildHasher),
         }
     }
 
