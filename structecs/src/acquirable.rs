@@ -39,7 +39,7 @@ impl<T: 'static> Acquirable<T> {
     }
 
     #[inline]
-    pub unsafe fn new_target(inner: EntityData) -> Self {
+    pub(crate) unsafe fn new_target(inner: EntityData) -> Self {
         Acquirable::new(inner.data_ptr().cast::<T>(), inner)
     }
 

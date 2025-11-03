@@ -147,7 +147,7 @@ fn test_concurrent_insert_and_remove() {
     let ids_remover = Arc::clone(&ids);
     let remover = thread::spawn(move || {
         for i in 0..500 {
-            world_remover.remove_entity(&ids_remover[i]);
+            let _ = world_remover.remove_entity(&ids_remover[i]);
         }
     });
     handles.push(remover);
@@ -199,7 +199,7 @@ fn test_concurrent_mixed_operations() {
         let handle = thread::spawn(move || {
             for i in 0..50 {
                 let idx = thread_id * 50 + i;
-                world_clone.remove_entity(&ids_clone[idx]);
+                let _ = world_clone.remove_entity(&ids_clone[idx]);
             }
         });
         handles.push(handle);
@@ -337,7 +337,7 @@ fn test_concurrent_updates() {
         let handle = thread::spawn(move || {
             for i in 0..100 {
                 // Remove and reinsert with updated health
-                world_clone.remove_entity(&ids_clone[i]);
+                let _ = world_clone.remove_entity(&ids_clone[i]);
                 world_clone.add_entity(Player {
                     name: format!("Player{}", i),
                     health: 100 - thread_id,
@@ -376,7 +376,7 @@ fn test_stress_100_threads_heavy_load() {
 
                 // Update (remove + reinsert)
                 if i % 2 == 0 {
-                    world_clone.remove_entity(&id);
+                    let _ = world_clone.remove_entity(&id);
                     let new_id = world_clone.add_entity(Player {
                         name: format!("Player_{}_{}", thread_id, i),
                         health: 80,

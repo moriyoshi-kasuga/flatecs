@@ -293,6 +293,10 @@ impl World {
     ///
     /// This method is thread-safe and can be called concurrently from multiple threads.
     ///
+    /// # Errors
+    ///
+    /// Returns `WorldError::EntityNotFound` if the entity doesn't exist in the world.
+    ///
     /// # Example
     ///
     /// ```ignore
@@ -318,7 +322,8 @@ impl World {
 
     /// Remove multiple entities from the world in batch.
     ///
-    /// Returns the number of entities successfully removed.
+    /// Returns a vector of EntityIds that were successfully removed.
+    /// Entities that don't exist are silently skipped.
     ///
     /// This method is optimized for bulk deletion by:
     /// - Grouping entities by archetype to minimize archetype lookups
@@ -333,7 +338,16 @@ impl World {
     /// # Thread Safety
     ///
     /// This method is thread-safe and can be called concurrently from multiple threads.
-    pub fn remove_entities(&self, entity_ids: &[EntityId]) -> usize {
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let ids = vec![id1, id2, id3];
+    /// let removed = world.remove_entities(&ids);
+    /// println!("Removed {} entities", removed.len());
+    /// ```
+    #[must_use]
+    pub fn remove_entities(&self, entity_ids: &[EntityId]) -> Vec<EntityId> {
         // Group entity IDs by archetype
         let mut archetype_groups: FxHashMap<ArchetypeId, Vec<EntityId>> = FxHashMap::default();
 
@@ -347,18 +361,18 @@ impl World {
         }
 
         // Remove entities from each archetype
-        let mut removed_count = 0;
+        let mut removed = Vec::new();
         for (archetype_id, entities) in archetype_groups {
             if let Some(archetype) = self.archetypes.get(&archetype_id) {
                 for entity_id in entities {
                     if archetype.remove_entity(&entity_id).is_some() {
-                        removed_count += 1;
+                        removed.push(entity_id);
                     }
                 }
             }
         }
 
-        removed_count
+        removed
     }
 
     /// Query all entities with component T.

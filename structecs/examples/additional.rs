@@ -122,10 +122,7 @@ fn main() {
     for (id, player, (buff, poison)) in world.query_with::<Player, (Buff, Poisoned)>().query() {
         print!(
             "   [{}] {} (HP: {}, Lv: {})",
-            id,
-            player.name,
-            player.health,
-            player.level
+            id, player.name, player.health, player.level
         );
 
         if let Some(b) = buff {
@@ -166,7 +163,7 @@ fn main() {
         },
     );
 
-    if let Some(buff) = world.extract_additional::<Buff>(&warrior_id).ok() {
+    if let Ok(buff) = world.extract_additional::<Buff>(&warrior_id) {
         println!(
             "   Warrior now has: {} (+{} for {}s)",
             buff.name, buff.power, buff.duration_seconds
@@ -176,7 +173,7 @@ fn main() {
 
     // Remove poison
     println!("8. Curing rogue's poison...");
-    if let Some(poison) = world.remove_additional::<Poisoned>(&rogue_id).ok() {
+    if let Ok(poison) = world.remove_additional::<Poisoned>(&rogue_id) {
         println!(
             "   Removed poison: {} damage/tick with {} ticks remaining",
             poison.damage_per_tick, poison.ticks_remaining

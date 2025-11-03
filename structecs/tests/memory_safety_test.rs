@@ -59,7 +59,7 @@ fn test_no_memory_leak_with_updates() {
     }
     for _ in 0..10 {
         for id in &mut ids {
-            world.remove_entity(id);
+            let _ = world.remove_entity(id);
             let new_id = world.add_entity(TestEntity {
                 data: vec![1u8; 2048],
             });
@@ -88,7 +88,7 @@ fn test_large_entity_lifecycle() {
 
     // Remove half
     (0..50).for_each(|i| {
-        world.remove_entity(&ids[i]);
+        let _ = world.remove_entity(&ids[i]);
     });
 
     assert_eq!(world.entity_count(), 50);
@@ -113,7 +113,7 @@ fn test_concurrent_memory_safety() {
 
                 // Remove previous iteration
                 if iteration > 0 {
-                    world_clone.remove_entity(&local_ids[iteration - 1]);
+                    let _ = world_clone.remove_entity(&local_ids[iteration - 1]);
                 }
             }
         });
@@ -162,7 +162,7 @@ fn test_drop_behavior() {
 
         // Remove 50 entities
         (0..50).for_each(|i| {
-            world.remove_entity(&ids[i]);
+            let _ = world.remove_entity(&ids[i]);
         });
 
         (50..75).for_each(|i| {
@@ -239,7 +239,7 @@ fn test_empty_archetype_cleanup() {
         }
 
         for id in &ids {
-            world.remove_entity(id);
+            let _ = world.remove_entity(id);
         }
 
         // Verify empty
@@ -266,7 +266,7 @@ fn test_massive_insertion_and_removal() {
 
     // Remove all
     for id in &ids {
-        world.remove_entity(id);
+        let _ = world.remove_entity(id);
     }
 
     assert_eq!(world.entity_count(), 0);

@@ -71,7 +71,7 @@ fn test_has_additional() {
         buff_type: "Strength".to_string(),
         duration: 5,
     };
-    world.add_additional(&player_id, buff);
+    let _ = world.add_additional(&player_id, buff);
 
     // 追加後はある
     assert!(world.has_additional::<PlayerBuff>(&player_id));
@@ -93,7 +93,7 @@ fn test_remove_additional() {
         buff_type: "Defense".to_string(),
         duration: 15,
     };
-    world.add_additional(&player_id, buff);
+    let _ = world.add_additional(&player_id, buff);
 
     assert!(world.has_additional::<PlayerBuff>(&player_id));
 
@@ -124,14 +124,14 @@ fn test_replace_additional() {
         buff_type: "Fire".to_string(),
         duration: 10,
     };
-    world.add_additional(&player_id, buff1);
+    let _ = world.add_additional(&player_id, buff1);
 
     // 同じ型で上書き
     let buff2 = PlayerBuff {
         buff_type: "Ice".to_string(),
         duration: 20,
     };
-    world.add_additional(&player_id, buff2);
+    let _ = world.add_additional(&player_id, buff2);
 
     // 新しい値が取得できる
     let extracted = world.extract_additional::<PlayerBuff>(&player_id).unwrap();
@@ -155,15 +155,15 @@ fn test_multiple_additionals() {
         buff_type: "Haste".to_string(),
         duration: 30,
     };
-    world.add_additional(&player_id, buff);
+    let _ = world.add_additional(&player_id, buff);
 
     let deathed = PlayerDeathed { death_count: 3 };
-    world.add_additional(&player_id, deathed);
+    let _ = world.add_additional(&player_id, deathed);
 
     let tag = PlayerTag {
         tag: "VIP".to_string(),
     };
-    world.add_additional(&player_id, tag);
+    let _ = world.add_additional(&player_id, tag);
 
     // 全て取得できる
     assert!(world.has_additional::<PlayerBuff>(&player_id));
@@ -197,7 +197,7 @@ fn test_query_with_single_additional() {
     });
 
     // player1にだけbuffを追加
-    world.add_additional(
+    let _ = world.add_additional(
         &player1_id,
         PlayerBuff {
             buff_type: "Power".to_string(),
@@ -243,17 +243,17 @@ fn test_query_with_multiple_additionals() {
     });
 
     // player1: buff + deathed
-    world.add_additional(
+    let _ = world.add_additional(
         &player1_id,
         PlayerBuff {
             buff_type: "Agility".to_string(),
             duration: 5,
         },
     );
-    world.add_additional(&player1_id, PlayerDeathed { death_count: 1 });
+    let _ = world.add_additional(&player1_id, PlayerDeathed { death_count: 1 });
 
     // player2: buffのみ
-    world.add_additional(
+    let _ = world.add_additional(
         &player2_id,
         PlayerBuff {
             buff_type: "Wisdom".to_string(),
@@ -262,7 +262,7 @@ fn test_query_with_multiple_additionals() {
     );
 
     // player3: deathedのみ
-    world.add_additional(&player3_id, PlayerDeathed { death_count: 5 });
+    let _ = world.add_additional(&player3_id, PlayerDeathed { death_count: 5 });
 
     // クエリで取得
     let results: Vec<_> = world
@@ -317,7 +317,7 @@ fn test_additional_drop_safety() {
         let player_id = world.add_entity(player);
 
         // DropTrackerを追加
-        world.add_additional(&player_id, DropTracker { value: 42 });
+        let _ = world.add_additional(&player_id, DropTracker { value: 42 });
 
         // 確認
         assert!(world.has_additional::<DropTracker>(&player_id));

@@ -118,7 +118,7 @@ fn test_remove_nonexistent_entity() {
         level: 1,
     });
 
-    world.remove_entity(&id);
+    let _ = world.remove_entity(&id);
 
     // Second removal should fail
     let removed = world.remove_entity(&id);
@@ -141,7 +141,7 @@ fn test_remove_multiple_entities() {
 
     // Remove half
     (0..5).for_each(|i| {
-        world.remove_entity(&ids[i]);
+        let _ = world.remove_entity(&ids[i]);
     });
 
     assert_eq!(world.entity_count(), 5);
@@ -177,7 +177,7 @@ fn test_extract_component_nonexistent() {
         level: 1,
     });
 
-    world.remove_entity(&id);
+    let _ = world.remove_entity(&id);
 
     let player = world.extract_component::<Player>(&id);
     assert!(player.is_err());
@@ -279,7 +279,7 @@ fn test_mixed_operations() {
 
     // Remove some
     (0..30).for_each(|i| {
-        world.remove_entity(&ids[i]);
+        let _ = world.remove_entity(&ids[i]);
     });
 
     assert_eq!(world.entity_count(), 70);
@@ -453,7 +453,7 @@ fn test_remove_entities_batch() {
 
     // Remove first 50 in batch
     let removed = world.remove_entities(&ids[0..50]);
-    assert_eq!(removed, 50);
+    assert_eq!(removed.len(), 50);
     assert_eq!(world.entity_count(), 50);
 
     // Verify remaining entities
@@ -467,7 +467,7 @@ fn test_remove_entities_empty() {
 
     let ids: Vec<EntityId> = vec![];
     let removed = world.remove_entities(&ids);
-    assert_eq!(removed, 0);
+    assert_eq!(removed.len(), 0);
 }
 
 #[test]
@@ -482,7 +482,7 @@ fn test_remove_entities_nonexistent() {
     ];
 
     let removed = world.remove_entities(&fake_ids);
-    assert_eq!(removed, 0);
+    assert_eq!(removed.len(), 0);
 }
 
 #[test]
@@ -500,15 +500,15 @@ fn test_remove_entities_mixed() {
     }
 
     // Remove some entities individually first
-    world.remove_entity(&ids[0]);
-    world.remove_entity(&ids[1]);
+    let _ = world.remove_entity(&ids[0]);
+    let _ = world.remove_entity(&ids[1]);
 
     // Now try to remove batch including already-removed ones
     let remove_ids = vec![ids[0], ids[1], ids[2], ids[3], ids[4]];
     let removed = world.remove_entities(&remove_ids);
 
     // Should only remove 3 (ids[2], ids[3], ids[4])
-    assert_eq!(removed, 3);
+    assert_eq!(removed.len(), 3);
     assert_eq!(world.entity_count(), 5);
 }
 
@@ -537,7 +537,7 @@ fn test_remove_entities_different_types() {
     let mixed_ids = vec![player_ids[0], enemy_ids[0], player_ids[1], enemy_ids[1]];
     let removed = world.remove_entities(&mixed_ids);
 
-    assert_eq!(removed, 4);
+    assert_eq!(removed.len(), 4);
     assert_eq!(world.entity_count(), 6);
 }
 
@@ -553,7 +553,7 @@ fn test_contains_entity() {
 
     assert!(world.contains_entity(&id));
 
-    world.remove_entity(&id);
+    let _ = world.remove_entity(&id);
     assert!(!world.contains_entity(&id));
 
     // Non-existent entity
