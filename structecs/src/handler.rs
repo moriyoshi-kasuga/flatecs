@@ -1,4 +1,4 @@
-use std::{ptr::NonNull, sync::Arc};
+use std::ptr::NonNull;
 
 use crate::{Acquirable, Extractable, ExtractionMetadata};
 
@@ -25,6 +25,8 @@ impl<E: Extractable, Args, Return> UnTraitFn<E, Args, Return> {
 struct TypeErasedFn {
     ptr: NonNull<u8>,
     dropper: unsafe fn(NonNull<u8>),
+    #[cfg(debug_assertions)]
+    type_name: String,
 }
 
 impl TypeErasedFn {
@@ -43,6 +45,13 @@ impl TypeErasedFn {
         Self {
             ptr: unsafe { NonNull::new_unchecked(raw_ptr) },
             dropper,
+            #[cfg(debug_assertions)]
+            type_name: format!(
+                "impl Fn(&Acquirable<{}>, {}) -> {}",
+                std::any::type_name::<E>(),
+                std::any::type_name::<Args>(),
+                std::any::type_name::<Return>()
+            ),
         }
     }
 
@@ -62,7 +71,7 @@ unsafe impl Send for TypeErasedFn {}
 unsafe impl Sync for TypeErasedFn {}
 
 pub struct ComponentHandler<S: Extractable, Args, Return> {
-    function: Arc<TypeErasedFn>,
+    function: TypeErasedFn,
     _marker: std::marker::PhantomData<(S, Args, Return)>,
 }
 
@@ -77,9 +86,8 @@ impl<S: Extractable, Args, Return> ComponentHandler<S, Args, Return> {
             );
         }
 
-        let function = TypeErasedFn::new(func);
         Self {
-            function: Arc::new(function),
+            function: TypeErasedFn::new(func),
             _marker: std::marker::PhantomData,
         }
     }
@@ -89,18 +97,14 @@ impl<S: Extractable, Args, Return> ComponentHandler<S, Args, Return> {
     }
 }
 
-impl<S: Extractable, Args, Return> Clone for ComponentHandler<S, Args, Return> {
-    fn clone(&self) -> Self {
-        Self {
-            function: Arc::clone(&self.function),
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
 impl<S: Extractable, Args, Return> std::fmt::Debug for ComponentHandler<S, Args, Return> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ComponentHandler").finish()
+        let mut debug = f.debug_struct("ComponentHandler");
+        #[cfg(debug_assertions)]
+        debug.field("function", &self.function.type_name);
+        #[cfg(not(debug_assertions))]
+        debug.field("function", &"<type erased>");
+        debug.finish()
     }
 }
 

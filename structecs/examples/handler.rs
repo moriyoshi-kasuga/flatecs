@@ -55,7 +55,7 @@ fn main() {
     // Create a zombie with the death handler
     world.add_entity(Zombie {
         entity: Entity {
-            death_handler: death_handler.clone(),
+            death_handler,
             name: "Undead Walker".to_string(),
         },
         damage: 15,
@@ -65,7 +65,10 @@ fn main() {
     println!("3. Simulating entity deaths...\n");
 
     for (id, entity) in world.query::<Entity>() {
-        println!("Simulating death of entity ID {:?}...", id);
+        println!(
+            "Handler debug info for entity ID {}: {:?}",
+            id, entity.death_handler
+        );
         entity.death_handler.call(&entity, ());
     }
 }
