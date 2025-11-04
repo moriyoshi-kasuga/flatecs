@@ -34,14 +34,14 @@ use crate::{
 #[derive(Default)]
 pub struct World {
     /// Archetypes indexed by their TypeId
-    archetypes: DashMap<ArchetypeId, Arc<Archetype>, FxBuildHasher>,
+    pub(crate) archetypes: DashMap<ArchetypeId, Arc<Archetype>, FxBuildHasher>,
 
     /// Maps entity IDs to their archetype for fast lookup (lock-free concurrent access).
-    entity_index: DashMap<EntityId, ArchetypeId, FxBuildHasher>,
+    pub(crate) entity_index: DashMap<EntityId, ArchetypeId, FxBuildHasher>,
 
     /// Type index: maps component TypeId to archetypes that contain it
     /// This cache dramatically speeds up queries when there are many archetypes
-    type_index: DashMap<TypeId, FxHashSet<ArchetypeId>, FxBuildHasher>,
+    pub(crate) type_index: DashMap<TypeId, FxHashSet<ArchetypeId>, FxBuildHasher>,
 
     /// Next entity ID to assign (atomic for lock-free ID generation).
     next_entity_id: AtomicU32,
