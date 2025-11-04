@@ -623,7 +623,7 @@ impl World {
 
     /// Query all entities with component T.
     ///
-    /// Returns a Vec of (EntityId, Acquirable<T>) pairs.
+    /// Returns a Vec of (EntityId, `Acquirable<T>`) pairs.
     ///
     /// # Example
     ///

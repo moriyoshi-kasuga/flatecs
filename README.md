@@ -1,5 +1,10 @@
 # structecs
 
+[![Crates.io](https://img.shields.io/crates/v/structecs.svg)](https://crates.io/crates/structecs)
+[![Documentation](https://docs.rs/structecs/badge.svg)](https://docs.rs/structecs)
+[![License](https://img.shields.io/crates/l/structecs.svg)](https://github.com/moriyoshi-kasuga/structecs/blob/main/LICENSE)
+[![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org)
+
 **A flexible entity-component framework without the System.**
 
 Manage your data like ECS, control your logic like OOP.
