@@ -14,12 +14,6 @@ pub enum WorldError {
         component_name: &'static str,
     },
 
-    /// The requested additional component was not found on the entity.
-    AdditionalNotFound {
-        entity_id: EntityId,
-        component_name: &'static str,
-    },
-
     /// Batch removal completed with some failures.
     /// Contains the list of successfully removed entities and failed entities.
     PartialRemoval {
@@ -49,16 +43,6 @@ impl fmt::Display for WorldError {
                 write!(
                     f,
                     "Component '{}' not found on entity {}",
-                    component_name, entity_id
-                )
-            }
-            WorldError::AdditionalNotFound {
-                entity_id,
-                component_name,
-            } => {
-                write!(
-                    f,
-                    "Additional component '{}' not found on entity {}",
                     component_name, entity_id
                 )
             }

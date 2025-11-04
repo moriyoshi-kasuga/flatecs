@@ -133,88 +133,6 @@ fn test_partial_entity_removal_drops_only_removed() {
 }
 
 #[test]
-fn test_additional_component_drops_on_removal() {
-    make_drop_tracked!(AdditionalComp, DROP_COUNTER);
-    
-    #[derive(Debug, Extractable)]
-    struct BaseEntity {
-        value: i32,
-    }
-    
-    let world = World::new();
-    let entity_id = world.add_entity(BaseEntity { value: 42 });
-    
-    let comp = world.extract_component::<BaseEntity>(&entity_id).unwrap();
-    comp.add_additional(AdditionalComp::new(1));
-    
-    assert_eq!(DROP_COUNTER.load(Ordering::SeqCst), 0);
-    
-    let removed = comp.remove_additional::<AdditionalComp>();
-    assert!(removed.is_some());
-    
-    // remove_additionalはremoved_additionalリストに移動するため、即座にはドロップされない
-    assert_eq!(DROP_COUNTER.load(Ordering::SeqCst), 0);
-    
-    drop(removed);
-    drop(comp);
-    world.remove_entity(&entity_id).unwrap();
-    
-    // EntityDataの最後の参照がドロップされたときにクリーンアップされる
-    assert_eq!(DROP_COUNTER.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn test_additional_component_drops_with_entity() {
-    make_drop_tracked!(AdditionalComp, DROP_COUNTER);
-    
-    #[derive(Debug, Extractable)]
-    struct BaseEntity {
-        value: i32,
-    }
-    
-    let world = World::new();
-    let entity_id = world.add_entity(BaseEntity { value: 42 });
-    
-    let comp = world.extract_component::<BaseEntity>(&entity_id).unwrap();
-    comp.add_additional(AdditionalComp::new(1));
-    
-    drop(comp);
-    world.remove_entity(&entity_id).unwrap();
-    
-    // エンティティと共にAdditionalコンポーネントもドロップされる
-    assert_eq!(DROP_COUNTER.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn test_replace_additional_drops_old_value() {
-    make_drop_tracked!(AdditionalComp, DROP_COUNTER);
-    
-    #[derive(Debug, Extractable)]
-    struct BaseEntity {
-        value: i32,
-    }
-    
-    let world = World::new();
-    let entity_id = world.add_entity(BaseEntity { value: 42 });
-    
-    let comp = world.extract_component::<BaseEntity>(&entity_id).unwrap();
-    comp.add_additional(AdditionalComp::new(1));
-    
-    assert_eq!(DROP_COUNTER.load(Ordering::SeqCst), 0);
-    
-    // 置き換えると古い値がドロップされる
-    comp.add_additional(AdditionalComp::new(2));
-    
-    assert_eq!(DROP_COUNTER.load(Ordering::SeqCst), 1);
-    
-    drop(comp);
-    drop(world);
-    
-    // 新しい値もドロップされる
-    assert_eq!(DROP_COUNTER.load(Ordering::SeqCst), 2);
-}
-
-#[test]
 fn test_nested_arc_drops_correctly() {
     let outer_arc = Arc::new(vec![1, 2, 3, 4, 5]);
     let weak_ref = Arc::downgrade(&outer_arc);
@@ -286,31 +204,6 @@ fn test_extraction_then_drop_world() {
     
     // extractedをドロップすると、id1も解放される
     assert_eq!(DROP_COUNTER.load(Ordering::SeqCst), 2);
-}
-
-#[test]
-fn test_multiple_additional_types_drop_correctly() {
-    make_drop_tracked!(Additional1, DROP_COUNTER1);
-    make_drop_tracked!(Additional2, DROP_COUNTER2);
-    
-    #[derive(Debug, Extractable)]
-    struct BaseEntity {
-        value: i32,
-    }
-    
-    let world = World::new();
-    let entity_id = world.add_entity(BaseEntity { value: 42 });
-    
-    let comp = world.extract_component::<BaseEntity>(&entity_id).unwrap();
-    comp.add_additional(Additional1::new(1));
-    comp.add_additional(Additional2::new(2));
-    
-    drop(comp);
-    drop(world);
-    
-    // 両方のAdditionalコンポーネントがドロップされる
-    assert_eq!(DROP_COUNTER1.load(Ordering::SeqCst), 1);
-    assert_eq!(DROP_COUNTER2.load(Ordering::SeqCst), 1);
 }
 
 #[test]

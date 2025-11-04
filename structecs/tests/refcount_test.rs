@@ -308,54 +308,6 @@ fn test_nested_extraction_refcount() {
 }
 
 #[test]
-fn test_refcount_with_additional() {
-    static DROP_COUNT_LOCAL: AtomicUsize = AtomicUsize::new(0);
-    
-    #[derive(Debug, Extractable)]
-    struct DropCounter {
-        id: usize,
-    }
-    
-    impl Drop for DropCounter {
-        fn drop(&mut self) {
-            DROP_COUNT_LOCAL.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-    
-    DROP_COUNT_LOCAL.store(0, Ordering::SeqCst);
-    
-    let world = World::new();
-    let id = world.add_entity(TestComponent { value: 1 });
-    
-    let comp = world.extract_component::<TestComponent>(&id).unwrap();
-    
-    // Add additional component
-    comp.add_additional(DropCounter { id: 4 });
-    
-    // Extract additional
-    let additional1 = comp.extract_additional::<DropCounter>().unwrap();
-    let additional2 = additional1.clone();
-    
-    // Drop counter should not be called
-    assert_eq!(DROP_COUNT_LOCAL.load(Ordering::SeqCst), 0);
-    
-    // Drop one reference
-    drop(additional1);
-    assert_eq!(DROP_COUNT_LOCAL.load(Ordering::SeqCst), 0);
-    
-    // Still accessible
-    assert_eq!(additional2.id, 4);
-    
-    // Drop all references
-    drop(additional2);
-    drop(comp);
-    world.remove_entity(&id).unwrap();
-    
-    // Now should be dropped
-    assert_eq!(DROP_COUNT_LOCAL.load(Ordering::SeqCst), 1);
-}
-
-#[test]
 fn test_massive_clone_chain() {
     let world = World::new();
     let id = world.add_entity(TestComponent { value: 999 });

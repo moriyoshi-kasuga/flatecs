@@ -435,24 +435,6 @@ fn test_extract_type_safety() {
 }
 
 #[test]
-fn test_extract_with_additional_components() {
-    let world = World::new();
-    let id = world.add_entity(Component1 { value: 100 });
-    
-    // Extract and add additional component
-    let comp = world.extract_component::<Component1>(&id).unwrap();
-    comp.add_additional(Component2 { data: "additional".to_string() });
-    
-    // Should still be able to extract Component1
-    let comp1 = world.extract_component::<Component1>(&id).unwrap();
-    assert_eq!(comp1.value, 100);
-    
-    // Should be able to extract additional Component2
-    let additional = comp1.extract_additional::<Component2>().unwrap();
-    assert_eq!(additional.data, "additional");
-}
-
-#[test]
 fn test_extract_maintains_refcount() {
     make_drop_tracked!(DropTracked5, DROP_COUNTER5);
     

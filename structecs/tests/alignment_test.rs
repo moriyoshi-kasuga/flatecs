@@ -138,57 +138,6 @@ fn test_alignment_with_nested_high_alignment() {
 }
 
 #[test]
-fn test_alignment_with_additional() {
-    let world = World::new();
-    
-    // Start with normal alignment entity
-    let id = world.add_entity(Aligned8 { value: 0x123 });
-    
-    let component = world.extract_component::<Aligned8>(&id).unwrap();
-    
-    // Add high-alignment additional component
-    component.add_additional(Aligned16 {
-        value: 0xABCDEF0123456789_ABCDEF0123456789,
-    });
-    
-    // Extract additional and verify alignment
-    let additional = component.extract_additional::<Aligned16>().unwrap();
-    assert_eq!(additional.value, 0xABCDEF0123456789_ABCDEF0123456789);
-    
-    let ptr = &*additional as *const Aligned16;
-    assert_eq!(ptr as usize % 16, 0, "Additional component must maintain 16-byte alignment");
-}
-
-#[test]
-fn test_multiple_alignments_in_additional() {
-    let world = World::new();
-    
-    let id = world.add_entity(Aligned1 { value: 0x42 });
-    let component = world.extract_component::<Aligned1>(&id).unwrap();
-    
-    // Add components with different alignments
-    component.add_additional(Aligned8 { value: 0x111 });
-    component.add_additional(Aligned16 { value: 0x222 });
-    component.add_additional(Aligned1 { value: 0x33 });
-    
-    // Extract and verify all alignments
-    let a8 = component.extract_additional::<Aligned8>().unwrap();
-    let a16 = component.extract_additional::<Aligned16>().unwrap();
-    let a1 = component.extract_additional::<Aligned1>().unwrap();
-    
-    assert_eq!(a8.value, 0x111);
-    assert_eq!(a16.value, 0x222);
-    assert_eq!(a1.value, 0x33);
-    
-    // Verify pointer alignments
-    let ptr8 = &*a8 as *const Aligned8;
-    let ptr16 = &*a16 as *const Aligned16;
-    
-    assert_eq!(ptr8 as usize % 8, 0, "Aligned8 must be 8-byte aligned");
-    assert_eq!(ptr16 as usize % 16, 0, "Aligned16 must be 16-byte aligned");
-}
-
-#[test]
 fn test_alignment_with_query() {
     let world = World::new();
     
@@ -205,27 +154,6 @@ fn test_alignment_with_query() {
         let ptr = &*component as *const Aligned16;
         assert_eq!(ptr as usize % 16, 0, "Queried component must be 16-byte aligned");
     }
-}
-
-#[test]
-fn test_zst_additional() {
-    let world = World::new();
-    
-    let id = world.add_entity(Aligned8 { value: 0x123 });
-    let component = world.extract_component::<Aligned8>(&id).unwrap();
-    
-    // Add ZST as additional
-    component.add_additional(ZeroSized);
-    
-    // Extract ZST additional
-    let zst = component.extract_additional::<ZeroSized>();
-    assert!(zst.is_some(), "ZST additional should be extractable");
-    
-    // Add another ZST (should replace)
-    component.add_additional(ZeroSized);
-    
-    let zst2 = component.extract_additional::<ZeroSized>();
-    assert!(zst2.is_some(), "ZST additional should still be extractable");
 }
 
 #[test]

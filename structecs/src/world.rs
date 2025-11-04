@@ -1,6 +1,5 @@
 use std::{
     any::TypeId,
-    marker::PhantomData,
     sync::{
         Arc,
         atomic::{AtomicU32, Ordering},
@@ -13,7 +12,6 @@ use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use crate::{
     Acquirable, EntityId, Extractable, WorldError,
     archetype::{Archetype, ArchetypeId},
-    entity::EntityData,
 };
 
 /// The central storage for all entities and their components.
@@ -86,15 +84,6 @@ impl World {
     fn get_archetype_by_entity(&self, entity_id: &EntityId) -> Option<Arc<Archetype>> {
         let archetype_id = *self.entity_index.get(entity_id)?.value();
         self.archetypes.get(&archetype_id).map(|a| a.clone())
-    }
-
-    fn get_entity_data(&self, entity_id: &EntityId) -> Option<crate::entity::EntityData> {
-        let archetype_id = *self.entity_index.get(entity_id)?.value();
-        self.archetypes
-            .get(&archetype_id)?
-            .entities
-            .get(entity_id)
-            .map(|d| d.clone())
     }
 
     /// Add an entity to the world.
@@ -186,150 +175,6 @@ impl World {
         }
 
         entity_ids
-    }
-
-    /// Add an additional component to an entity.
-    ///
-    /// Returns `Ok(())` if the component was added successfully.
-    /// Returns `Err(WorldError::EntityNotFound)` if the entity doesn't exist.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use structecs::*;
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Player {
-    ///     name: String,
-    ///     level: u32,
-    /// }
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Buff {
-    ///     power: i32,
-    /// }
-    ///
-    /// let world = World::new();
-    /// let player_id = world.add_entity(Player {
-    ///     name: "Alice".to_string(),
-    ///     level: 10,
-    /// });
-    ///
-    /// // Add a buff as an additional component
-    /// world.add_additional(&player_id, Buff { power: 10 }).unwrap();
-    ///
-    /// // Verify the buff was added
-    /// assert!(world.has_additional::<Buff>(&player_id));
-    /// ```
-    pub fn add_additional<E: Extractable>(
-        &self,
-        entity_id: &EntityId,
-        entity: E,
-    ) -> Result<(), WorldError> {
-        let data = self
-            .get_entity_data(entity_id)
-            .ok_or(WorldError::EntityNotFound(*entity_id))?;
-        data.add_additional(entity);
-        Ok(())
-    }
-
-    /// Extract an additional component from an entity.
-    ///
-    /// Returns `Ok(Acquirable<T>)` if the additional component was found.
-    /// Returns `Err(WorldError::EntityNotFound)` if the entity doesn't exist.
-    /// Returns `Err(WorldError::AdditionalNotFound)` if the additional component doesn't exist.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use structecs::*;
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Player {
-    ///     name: String,
-    ///     level: u32,
-    /// }
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Buff {
-    ///     power: i32,
-    /// }
-    ///
-    /// let world = World::new();
-    /// let player_id = world.add_entity(Player {
-    ///     name: "Alice".to_string(),
-    ///     level: 10,
-    /// });
-    ///
-    /// // Add and extract a buff
-    /// world.add_additional(&player_id, Buff { power: 10 }).unwrap();
-    /// let buff = world.extract_additional::<Buff>(&player_id).unwrap();
-    /// assert_eq!(buff.power, 10);
-    /// ```
-    pub fn extract_additional<T: 'static>(
-        &self,
-        entity_id: &EntityId,
-    ) -> Result<Acquirable<T>, WorldError> {
-        let data = self
-            .get_entity_data(entity_id)
-            .ok_or(WorldError::EntityNotFound(*entity_id))?;
-
-        data.extract_additional::<T>()
-            .ok_or(WorldError::AdditionalNotFound {
-                entity_id: *entity_id,
-                component_name: std::any::type_name::<T>(),
-            })
-    }
-
-    /// Remove an additional component from an entity.
-    ///
-    /// Returns `Ok(Acquirable<T>)` with the removed component if it existed.
-    /// Returns `Err(WorldError::EntityNotFound)` if the entity doesn't exist.
-    /// Returns `Err(WorldError::AdditionalNotFound)` if the additional component doesn't exist.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use structecs::*;
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Player {
-    ///     name: String,
-    ///     level: u32,
-    /// }
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Buff {
-    ///     power: i32,
-    /// }
-    ///
-    /// let world = World::new();
-    /// let player_id = world.add_entity(Player {
-    ///     name: "Alice".to_string(),
-    ///     level: 10,
-    /// });
-    ///
-    /// // Add and then remove a buff
-    /// world.add_additional(&player_id, Buff { power: 10 }).unwrap();
-    /// let buff = world.remove_additional::<Buff>(&player_id).unwrap();
-    /// assert_eq!(buff.power, 10);
-    ///
-    /// // Verify the buff was removed
-    /// assert!(!world.has_additional::<Buff>(&player_id));
-    /// ```
-    pub fn remove_additional<T: 'static>(
-        &self,
-        entity_id: &EntityId,
-    ) -> Result<Acquirable<T>, WorldError> {
-        let data = self
-            .get_entity_data(entity_id)
-            .ok_or(WorldError::EntityNotFound(*entity_id))?;
-
-        data.remove_additional::<T>()
-            .ok_or(WorldError::AdditionalNotFound {
-                entity_id: *entity_id,
-                component_name: std::any::type_name::<T>(),
-            })
     }
 
     /// Extract a specific component from an entity.
@@ -718,66 +563,6 @@ impl World {
         self.archetypes.len()
     }
 
-    /// Query entities with a base struct and additional components.
-    ///
-    /// Returns a QueryWith builder that allows iteration over entities
-    /// that have the base struct type T, optionally with additional components A.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use structecs::*;
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Player {
-    ///     name: String,
-    ///     health: u32,
-    /// }
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Buff {
-    ///     power: i32,
-    /// }
-    ///
-    /// let world = World::new();
-    ///
-    /// // Add players with and without buffs
-    /// let p1 = world.add_entity(Player {
-    ///     name: "Alice".to_string(),
-    ///     health: 100,
-    /// });
-    /// let p2 = world.add_entity(Player {
-    ///     name: "Bob".to_string(),
-    ///     health: 80,
-    /// });
-    ///
-    /// // Add buff only to Alice
-    /// world.add_additional(&p1, Buff { power: 10 }).unwrap();
-    ///
-    /// // Query for Player entities with Buff additionals
-    /// let mut count = 0;
-    /// for (id, player, (buff,)) in world.query_with::<Player, (Buff,)>().query() {
-    ///     count += 1;
-    ///     if let Some(buff) = buff {
-    ///         assert_eq!(buff.power, 10);
-    ///     }
-    /// }
-    /// assert_eq!(count, 2); // Both players are queried
-    /// ```
-    pub fn query_with<'w, T: 'static, A: AdditionalTuple>(&'w self) -> QueryWith<'w, T, A> {
-        QueryWith {
-            world: self,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Check if an entity has an additional component.
-    pub fn has_additional<T: 'static>(&self, entity_id: &EntityId) -> bool {
-        self.get_entity_data(entity_id)
-            .map(|data| data.has_additional::<T>())
-            .unwrap_or(false)
-    }
-
     /// Check if an entity exists in the world.
     pub fn contains_entity(&self, entity_id: &EntityId) -> bool {
         self.entity_index.contains_key(entity_id)
@@ -798,87 +583,3 @@ impl World {
         self.type_index.clear();
     }
 }
-
-/// QueryWith builder for querying entities with base struct + additional components.
-pub struct QueryWith<'w, T, A> {
-    world: &'w World,
-    _phantom: PhantomData<(T, A)>,
-}
-
-impl<'w, T: 'static, A: AdditionalTuple> QueryWith<'w, T, A> {
-    /// Query entities with base struct T and additionals A.
-    ///
-    /// Returns an iterator for efficient, zero-allocation querying.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use structecs::*;
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Player {
-    ///     name: String,
-    ///     level: u32,
-    /// }
-    ///
-    /// #[derive(Debug, Extractable)]
-    /// struct Buff {
-    ///     power: i32,
-    /// }
-    ///
-    /// let world = World::new();
-    /// let player_id = world.add_entity(Player {
-    ///     name: "Hero".to_string(),
-    ///     level: 10,
-    /// });
-    /// world.add_additional(&player_id, Buff { power: 50 }).unwrap();
-    ///
-    /// // Direct iteration
-    /// for (id, player, (buff,)) in world.query_with::<Player, (Buff,)>().query() {
-    ///     if let Some(buff) = buff {
-    ///         assert_eq!(buff.power, 50);
-    ///     }
-    /// }
-    ///
-    /// // Collect if needed
-    /// let results: Vec<_> = world.query_with::<Player, (Buff,)>().query().collect();
-    /// assert_eq!(results.len(), 1);
-    /// ```
-    pub fn query(&'w self) -> impl Iterator<Item = (EntityId, Acquirable<T>, A::Output)> + 'w {
-        self.world.query::<T>().into_iter().map(|(id, base)| {
-            let additionals = A::extract_from(&base.inner);
-            (id, base, additionals)
-        })
-    }
-}
-
-/// Trait for tuples of additional components.
-///
-/// This trait allows querying for multiple additional components at once.
-/// Each component in the tuple is returned as Option<Acquirable<T>>.
-pub trait AdditionalTuple {
-    type Output;
-    fn extract_from(data: &EntityData) -> Self::Output;
-}
-
-macro_rules! impl_additional_tuple {
-    ($($name:ident),*) => {
-        impl<$($name: 'static),*> AdditionalTuple for ($($name),*,) {
-            type Output = ($(Option<Acquirable<$name>>),*,);
-            fn extract_from(data: &EntityData) -> Self::Output {
-                (
-                    $(data.extract_additional::<$name>()),*,
-                )
-            }
-        }
-    };
-}
-
-impl_additional_tuple!(A1);
-impl_additional_tuple!(A1, A2);
-impl_additional_tuple!(A1, A2, A3);
-impl_additional_tuple!(A1, A2, A3, A4);
-impl_additional_tuple!(A1, A2, A3, A4, A5);
-impl_additional_tuple!(A1, A2, A3, A4, A5, A6);
-impl_additional_tuple!(A1, A2, A3, A4, A5, A6, A7);
-impl_additional_tuple!(A1, A2, A3, A4, A5, A6, A7, A8);

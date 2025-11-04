@@ -1,4 +1,6 @@
-use crate::{Acquirable, Extractable, ExtractionMetadata, entity::EntityData};
+use crate::{Acquirable, Extractable, entity::EntityData};
+#[cfg(debug_assertions)]
+use crate::ExtractionMetadata;
 
 /// Metadata for debugging handler type information (debug builds only).
 #[cfg(debug_assertions)]

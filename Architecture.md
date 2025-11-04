@@ -10,9 +10,8 @@
 4. [データフロー](#データフロー)
 5. [並行処理モデル](#並行処理モデル)
 6. [メモリモデル](#メモリモデル)
-7. [Additional Components](#additional-components)
-8. [パフォーマンス特性](#パフォーマンス特性)
-9. [技術的制約と設計判断](#技術的制約と設計判断)
+7. [パフォーマンス特性](#パフォーマンス特性)
+8. [技術的制約と設計判断](#技術的制約と設計判断)
 
 ---
 
@@ -592,106 +591,19 @@ impl Drop for EntityDataInner {
 
 ### メモリレイアウト最適化
 
-**キャッシュライン最適化（False Sharing回避）:**
-
 ```rust
 #[repr(C)]
 pub(crate) struct EntityDataInner {
-    pub(crate) counter: AtomicUsize,  // 0-7 bytes
-    _pad: [u8; 56],                    // 8-63 bytes (padding)
-    pub(crate) data: NonNull<u8>,     // 64+ bytes (next cache line)
-    pub(crate) extractor: Arc<Extractor>,
-    pub(crate) additional: RwLock<Vec<...>>,
+    pub(crate) counter: AtomicUsize,  // 8 bytes
+    pub(crate) data: NonNull<u8>,     // 8 bytes
+    pub(crate) extractor: Arc<Extractor>,  // 8 bytes
 }
 ```
 
-**最適化の理由:**
+**メモリ効率:**
 
-1. **False Sharingの問題**: 複数スレッドが同じキャッシュライン（通常64バイト）内の異なるフィールドにアクセスすると、キャッシュの無効化が頻発し性能が劣化
-2. **解決策**: `counter`を独立したキャッシュラインに配置し、他のフィールドと分離
-3. **効果**: 並行クローン/ドロップ操作で20-30%の性能向上
-
-**メモリレイアウト:**
-```
-Bytes 0-7:   counter (AtomicUsize)
-Bytes 8-63:  padding (unused)
-Bytes 64+:   data, extractor, additional (次のキャッシュライン)
-```
-
-これにより、あるスレッドが`counter`を更新しても、他のスレッドが`data`や`extractor`にアクセスする際のキャッシュ競合が発生しません。
-
----
-
-## Additional Components
-
-**Additional Components**は、エンティティに後から追加・削除できる動的なコンポーネントです。
-
-### 設計目的
-
-```rust
-// 主要構造（アーキタイプ）
-#[derive(Extractable)]
-pub struct Player {
-    pub name: String,
-    pub health: u32,
-}
-
-// 一時的なデータ（Additional）
-struct Buff { power: u32, duration: u32 }
-struct PoisonEffect { damage: u32, ticks: u32 }
-
-// 動的に追加/削除
-world.add_additional(&player_id, Buff { power: 10, duration: 5 })?;
-world.remove_additional::<Buff>(&player_id);
-```
-
-### ストレージ構造
-
-```rust
-pub(crate) struct EntityDataInner {
-    pub(crate) data: NonNull<u8>,
-    pub(crate) counter: NonNull<AtomicUsize>,
-    pub(crate) extractor: Arc<Extractor>,
-    pub(crate) additional: RwLock<Vec<(TypeId, NonNull<u8>, Arc<Extractor>)>>,
-}
-```
-
-各エンティティがAdditionalコンポーネントのリストを保持。
-
-### 主要API
-
-```rust
-impl World {
-    pub fn add_additional<T: Extractable>(&self, entity_id: &EntityId, component: T) 
-        -> Result<(), &'static str>;
-    pub fn extract_additional<T: 'static>(&self, entity_id: &EntityId) 
-        -> Option<Acquirable<T>>;
-    pub fn has_additional<T: 'static>(&self, entity_id: &EntityId) -> bool;
-    pub fn remove_additional<T: 'static>(&self, entity_id: &EntityId) -> bool;
-    pub fn query_with<T: 'static, A: AdditionalTuple>(&self) 
-        -> impl Iterator<Item = (EntityId, Acquirable<T>, A::Output)>;
-}
-```
-
-### 使用例
-
-```rust
-// Additionalと共にクエリ
-for (id, player, (buff, poison)) in world.query_with::<Player, (Buff, PoisonEffect)>() {
-    // BuffとPoisonEffectの両方を持つPlayerのみ
-    println!("{} has buff power {} and poison", player.name, buff.power);
-}
-```
-
-### アーキタイプ vs Additional
-
-| 特徴 | アーキタイプ（主要構造） | Additional（動的） |
-|------|----------------------|-------------------|
-| **定義** | struct定義時に固定 | 実行時に追加/削除 |
-| **パフォーマンス** | ⭐⭐⭐⭐⭐ 高速 | ⭐⭐⭐ 中速 |
-| **メモリ効率** | ⭐⭐⭐⭐⭐ 連続配置 | ⭐⭐⭐ 個別確保 |
-| **柔軟性** | ⭐⭐ コンパイル時固定 | ⭐⭐⭐⭐⭐ 動的 |
-| **用途** | 必須データ、永続的 | 一時的、オプショナル |
+- **総サイズ**: 24 bytes (padding: 0 bytes)
+- **アライメント**: 8 bytes
 
 ---
 
@@ -781,7 +693,7 @@ struct Player {
 }
 ```
 
-または**Additional Components**を使用。
+ユーザーが独自のシステムで動的なコンポーネントを管理することが推奨されます。
 
 ### 5. unsafe コードの使用
 

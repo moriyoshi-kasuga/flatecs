@@ -1,5 +1,4 @@
 use std::{
-    any::TypeId,
     ptr::NonNull,
     sync::{
         Arc,
@@ -7,10 +6,7 @@ use std::{
     },
 };
 
-use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
-
-use crate::{Extractable, extractor::Extractor};
+use crate::extractor::Extractor;
 
 /// Unique identifier for an entity in the World.
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
@@ -55,16 +51,15 @@ pub(crate) struct EntityDataInner {
     pub(crate) extractor: Arc<Extractor>,
 }
 
-#[repr(transparent)]
 pub struct EntityData {
     inner: NonNull<EntityDataInner>,
 }
 
 // SAFETY: EntityData uses atomic reference counting and all internal data
-// is properly synchronized with Arc and RwLock. Safe to send across threads.
+// is properly synchronized with Arc. Safe to send across threads.
 unsafe impl Send for EntityData {}
-// SAFETY: EntityData uses Arc for extractor and RwLock for additional components,
-// providing safe concurrent access. Safe to share across threads.
+// SAFETY: EntityData uses Arc for extractor, providing safe concurrent access.
+// Safe to share across threads.
 unsafe impl Sync for EntityData {}
 
 impl EntityData {
@@ -113,22 +108,6 @@ impl EntityData {
         // SAFETY: The caller must ensure proper synchronization. The extractor validates
         // that type T exists in the entity data and returns None if not present.
         unsafe { self.inner().extractor.extract_ptr::<T>(self.inner().data) }
-    }
-
-    pub(crate) fn add_additional<E: Extractable>(&self, data: E) {
-        todo!()
-    }
-
-    pub(crate) fn extract_additional<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
-        todo!()
-    }
-
-    pub(crate) fn has_additional<T: 'static>(&self) -> bool {
-        todo!()
-    }
-
-    pub(crate) fn remove_additional<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
-        todo!()
     }
 }
 
