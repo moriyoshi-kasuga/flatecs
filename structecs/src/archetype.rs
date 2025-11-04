@@ -12,14 +12,14 @@ pub struct Archetype {
     pub(crate) extractor: Arc<Extractor>,
 
     /// Entities stored in this archetype.
-    pub(crate) entities: DashMap<EntityId, EntityData, FxBuildHasher>,
+    pub(crate) entities: Arc<DashMap<EntityId, EntityData, FxBuildHasher>>,
 }
 
 impl Archetype {
     pub(crate) fn new<E: Extractable>() -> Self {
         Self {
             extractor: Arc::new(Extractor::new::<E>()),
-            entities: DashMap::with_hasher(FxBuildHasher),
+            entities: Arc::new(DashMap::with_hasher(FxBuildHasher)),
         }
     }
 
