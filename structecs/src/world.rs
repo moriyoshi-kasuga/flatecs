@@ -191,8 +191,31 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// world.add_additional(&player_id, Buff { power: 10 })?;
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Player {
+    ///     name: String,
+    ///     level: u32,
+    /// }
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Buff {
+    ///     power: i32,
+    /// }
+    ///
+    /// let world = World::new();
+    /// let player_id = world.add_entity(Player {
+    ///     name: "Alice".to_string(),
+    ///     level: 10,
+    /// });
+    ///
+    /// // Add a buff as an additional component
+    /// world.add_additional(&player_id, Buff { power: 10 }).unwrap();
+    ///
+    /// // Verify the buff was added
+    /// assert!(world.has_additional::<Buff>(&player_id));
     /// ```
     pub fn add_additional<E: Extractable>(
         &self,
@@ -214,9 +237,30 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// let buff = world.extract_additional::<Buff>(&player_id)?;
-    /// println!("Buff power: {}", buff.power);
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Player {
+    ///     name: String,
+    ///     level: u32,
+    /// }
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Buff {
+    ///     power: i32,
+    /// }
+    ///
+    /// let world = World::new();
+    /// let player_id = world.add_entity(Player {
+    ///     name: "Alice".to_string(),
+    ///     level: 10,
+    /// });
+    ///
+    /// // Add and extract a buff
+    /// world.add_additional(&player_id, Buff { power: 10 }).unwrap();
+    /// let buff = world.extract_additional::<Buff>(&player_id).unwrap();
+    /// assert_eq!(buff.power, 10);
     /// ```
     pub fn extract_additional<T: 'static>(
         &self,
@@ -241,9 +285,33 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// let buff = world.remove_additional::<Buff>(&player_id)?;
-    /// println!("Removed buff with power: {}", buff.power);
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Player {
+    ///     name: String,
+    ///     level: u32,
+    /// }
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Buff {
+    ///     power: i32,
+    /// }
+    ///
+    /// let world = World::new();
+    /// let player_id = world.add_entity(Player {
+    ///     name: "Alice".to_string(),
+    ///     level: 10,
+    /// });
+    ///
+    /// // Add and then remove a buff
+    /// world.add_additional(&player_id, Buff { power: 10 }).unwrap();
+    /// let buff = world.remove_additional::<Buff>(&player_id).unwrap();
+    /// assert_eq!(buff.power, 10);
+    ///
+    /// // Verify the buff was removed
+    /// assert!(!world.has_additional::<Buff>(&player_id));
     /// ```
     pub fn remove_additional<T: 'static>(
         &self,
@@ -268,9 +336,34 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// let health = world.extract_component::<u32>(&player_id)?;
-    /// println!("Health: {}", *health);
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Entity {
+    ///     name: String,
+    /// }
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// #[extractable(entity)]
+    /// struct Player {
+    ///     entity: Entity,
+    ///     health: u32,
+    /// }
+    ///
+    /// let world = World::new();
+    /// let player_id = world.add_entity(Player {
+    ///     entity: Entity { name: "Alice".to_string() },
+    ///     health: 100,
+    /// });
+    ///
+    /// // Extract the Entity component from Player
+    /// let entity = world.extract_component::<Entity>(&player_id).unwrap();
+    /// assert_eq!(entity.name, "Alice");
+    ///
+    /// // Extract the whole Player
+    /// let player = world.extract_component::<Player>(&player_id).unwrap();
+    /// assert_eq!(player.health, 100);
     /// ```
     pub fn extract_component<T: 'static>(
         &self,
@@ -301,9 +394,26 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// world.remove_entity(&player_id)?;
-    /// println!("Entity removed");
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Player {
+    ///     name: String,
+    ///     health: u32,
+    /// }
+    ///
+    /// let world = World::new();
+    /// let player_id = world.add_entity(Player {
+    ///     name: "Alice".to_string(),
+    ///     health: 100,
+    /// });
+    ///
+    /// assert_eq!(world.entity_count(), 1);
+    ///
+    /// // Remove the entity
+    /// world.remove_entity(&player_id).unwrap();
+    /// assert_eq!(world.entity_count(), 0);
     /// ```
     pub fn remove_entity(&self, entity_id: &EntityId) -> Result<(), WorldError> {
         let archetype_id = self
@@ -352,14 +462,41 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// let ids = vec![id1, id2, id3];
-    /// match world.try_remove_entities(&ids) {
-    ///     Ok(()) => println!("All entities removed"),
+    /// ```
+    /// use structecs::{*, WorldError};
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Player {
+    ///     name: String,
+    ///     health: u32,
+    /// }
+    ///
+    /// let world = World::new();
+    ///
+    /// // Add multiple players
+    /// let mut ids = vec![];
+    /// for i in 0..5 {
+    ///     let id = world.add_entity(Player {
+    ///         name: format!("Player{}", i),
+    ///         health: 100,
+    /// });
+    ///     ids.push(id);
+    /// }
+    ///
+    /// assert_eq!(world.entity_count(), 5);
+    ///
+    /// // Remove first 3 entities
+    /// world.try_remove_entities(&ids[0..3]).unwrap();
+    /// assert_eq!(world.entity_count(), 2);
+    ///
+    /// // Try to remove with non-existent entity
+    /// let mixed_ids = vec![ids[3], EntityId::from_raw(9999)];
+    /// match world.try_remove_entities(&mixed_ids) {
     ///     Err(WorldError::PartialRemoval { succeeded, failed }) => {
-    ///         println!("Removed {} entities, {} failed", succeeded.len(), failed.len());
+    ///         assert_eq!(succeeded.len(), 1);
+    ///         assert_eq!(failed.len(), 1);
     ///     }
-    ///     _ => {}
+    ///     _ => panic!("Expected PartialRemoval error"),
     /// }
     /// ```
     pub fn try_remove_entities(&self, entity_ids: &[EntityId]) -> Result<(), WorldError> {
@@ -428,11 +565,35 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// // Fast batch removal, ignoring errors
-    /// let ids = vec![id1, id2, id3];
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Player {
+    ///     name: String,
+    ///     health: u32,
+    /// }
+    ///
+    /// let world = World::new();
+    ///
+    /// // Add multiple players
+    /// let mut ids = vec![];
+    /// for i in 0..10 {
+    ///     let id = world.add_entity(Player {
+    ///         name: format!("Player{}", i),
+    ///         health: 100,
+    ///     });
+    ///     ids.push(id);
+    /// }
+    ///
+    /// assert_eq!(world.entity_count(), 10);
+    ///
+    /// // Fast batch removal - silently skips non-existent entities
+    /// ids.push(EntityId::from_raw(9999)); // Add non-existent ID
     /// world.remove_entities(&ids);
-    /// println!("Batch removal completed");
+    ///
+    /// // All valid entities removed, invalid ones silently skipped
+    /// assert_eq!(world.entity_count(), 0);
     /// ```
     pub fn remove_entities(&self, entity_ids: &[EntityId]) {
         // Group entity IDs by archetype (only allocates one HashMap)
@@ -466,15 +627,33 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// // Direct iteration
-    /// for (id, player) in world.query::<Player>() {
-    ///     println!("Player {}: health = {}", id, player.health);
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Player {
+    ///     name: String,
+    ///     health: u32,
     /// }
     ///
-    /// // Get length or random access
+    /// let world = World::new();
+    ///
+    /// // Add multiple players
+    /// for i in 0..5 {
+    ///     world.add_entity(Player {
+    ///         name: format!("Player{}", i),
+    ///         health: 100,
+    ///     });
+    /// }
+    ///
+    /// // Query for all Player entities
     /// let players = world.query::<Player>();
-    /// assert_eq!(players.len(), 100);
+    /// assert_eq!(players.len(), 5);
+    ///
+    /// // Direct iteration
+    /// for (id, player) in world.query::<Player>() {
+    ///     assert_eq!(player.health, 100);
+    /// }
     /// ```
     ///
     /// # Performance
@@ -542,15 +721,44 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// // Query for Player entities with PlayerDeathed and PlayerBuff additionals
-    /// world.query_with::<Player, (PlayerDeathed, PlayerBuff)>()
-    ///     .iter()
-    ///     .for_each(|(id, player, (deathed, buff))| {
-    ///         // player: Acquirable<Player>
-    ///         // deathed: Option<Acquirable<PlayerDeathed>>
-    ///         // buff: Option<Acquirable<PlayerBuff>>
-    ///     });
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Player {
+    ///     name: String,
+    ///     health: u32,
+    /// }
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Buff {
+    ///     power: i32,
+    /// }
+    ///
+    /// let world = World::new();
+    ///
+    /// // Add players with and without buffs
+    /// let p1 = world.add_entity(Player {
+    ///     name: "Alice".to_string(),
+    ///     health: 100,
+    /// });
+    /// let p2 = world.add_entity(Player {
+    ///     name: "Bob".to_string(),
+    ///     health: 80,
+    /// });
+    ///
+    /// // Add buff only to Alice
+    /// world.add_additional(&p1, Buff { power: 10 }).unwrap();
+    ///
+    /// // Query for Player entities with Buff additionals
+    /// let mut count = 0;
+    /// for (id, player, (buff,)) in world.query_with::<Player, (Buff,)>().query() {
+    ///     count += 1;
+    ///     if let Some(buff) = buff {
+    ///         assert_eq!(buff.power, 10);
+    ///     }
+    /// }
+    /// assert_eq!(count, 2); // Both players are queried
     /// ```
     pub fn query_with<'w, T: 'static, A: AdditionalTuple>(&'w self) -> QueryWith<'w, T, A> {
         QueryWith {
@@ -600,16 +808,37 @@ impl<'w, T: 'static, A: AdditionalTuple> QueryWith<'w, T, A> {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Player {
+    ///     name: String,
+    ///     level: u32,
+    /// }
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// struct Buff {
+    ///     power: i32,
+    /// }
+    ///
+    /// let world = World::new();
+    /// let player_id = world.add_entity(Player {
+    ///     name: "Hero".to_string(),
+    ///     level: 10,
+    /// });
+    /// world.add_additional(&player_id, Buff { power: 50 }).unwrap();
+    ///
     /// // Direct iteration
     /// for (id, player, (buff,)) in world.query_with::<Player, (Buff,)>().query() {
     ///     if let Some(buff) = buff {
-    ///         println!("Player {} has buff power {}", player.name, buff.power);
+    ///         assert_eq!(buff.power, 50);
     ///     }
     /// }
     ///
     /// // Collect if needed
     /// let results: Vec<_> = world.query_with::<Player, (Buff,)>().query().collect();
+    /// assert_eq!(results.len(), 1);
     /// ```
     pub fn query(&'w self) -> impl Iterator<Item = (EntityId, Acquirable<T>, A::Output)> + 'w {
         self.world.query::<T>().into_iter().map(|(id, base)| {

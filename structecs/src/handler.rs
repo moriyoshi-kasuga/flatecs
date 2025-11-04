@@ -74,30 +74,29 @@ unsafe impl<Args, Return> Sync for TypeErasedFn<Args, Return> {}
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```
 /// use structecs::*;
 ///
 /// #[derive(Debug, Extractable)]
-/// pub struct Entity {
-///     pub name: String,
-///     pub death_handler: ComponentHandler<Entity>,
-/// }
-///
-/// #[derive(Debug, Extractable)]
-/// #[extractable(entity)]
 /// pub struct Player {
-///     pub entity: Entity,
+///     pub name: String,
 ///     pub level: u32,
 /// }
 ///
-/// // Create a handler for Player entities
-/// let player_handler = ComponentHandler::<Entity>::for_type::<Player>(|player, ()| {
-///     println!("Level {} player {} died!", player.level, player.entity.name);
+/// let world = World::new();
+/// let player_id = world.add_entity(Player {
+///     name: "Hero".to_string(),
+///     level: 10,
 /// });
 ///
-/// // Query for Entity, but Player's handler will be called
-/// for (id, entity) in world.query::<Entity>() {
-///     entity.death_handler.call(&entity, ());  // Calls Player-specific logic
+/// // Create a handler for Player entities
+/// let player_handler = ComponentHandler::<Player>::for_type::<Player>(|player, ()| {
+///     println!("Level {} player {} died!", player.level, player.name);
+/// });
+///
+/// // Query for Player and call handler
+/// for (id, player) in world.query::<Player>() {
+///     player_handler.call(&player, ());  // Calls Player-specific logic
 /// }
 /// ```
 pub struct ComponentHandler<Base: Extractable, Args = (), Return = ()> {
@@ -122,10 +121,18 @@ impl<Base: Extractable, Args, Return> ComponentHandler<Base, Args, Return> {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// // Handler for Player entities stored in Entity base type
-    /// let handler = ComponentHandler::<Entity>::for_type::<Player>(|player, ()| {
-    ///     println!("Player {} died", player.entity.name);
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// pub struct Player {
+    ///     pub name: String,
+    ///     pub level: u32,
+    /// }
+    ///
+    /// // Handler for Player entities
+    /// let handler = ComponentHandler::<Player>::for_type::<Player>(|player, ()| {
+    ///     println!("Player {} died", player.name);
     /// });
     /// ```
     pub fn for_type<Concrete: Extractable>(
@@ -182,13 +189,27 @@ impl<Base: Extractable, Args, Return> ComponentHandler<Base, Args, Return> {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// let handler = ComponentHandler::<Entity>::for_type::<Player>(|player, ()| {
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// pub struct Player {
+    ///     pub name: String,
+    ///     pub level: u32,
+    /// }
+    ///
+    /// let world = World::new();
+    /// let player_id = world.add_entity(Player {
+    ///     name: "Hero".to_string(),
+    ///     level: 10,
+    /// });
+    ///
+    /// let handler = ComponentHandler::<Player>::for_type::<Player>(|player, ()| {
     ///     println!("Player died");
     /// });
     ///
-    /// for (id, entity) in world.query::<Entity>() {
-    ///     handler.call(&entity, ());
+    /// for (id, player) in world.query::<Player>() {
+    ///     handler.call(&player, ());
     /// }
     /// ```
     pub fn call<E: Extractable>(&self, entity: &Acquirable<E>, args: Args) -> Return {
@@ -225,14 +246,25 @@ impl<Base: Extractable, Args, Return> ComponentHandler<Base, Args, Return> {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// let handler = ComponentHandler::<Entity>::for_type::<Player>(|player, ()| {
+    /// ```
+    /// use structecs::*;
+    ///
+    /// #[derive(Debug, Extractable)]
+    /// pub struct Player {
+    ///     pub name: String,
+    ///     pub level: u32,
+    /// }
+    ///
+    /// let handler = ComponentHandler::<Player>::for_type::<Player>(|player, ()| {
     ///     println!("Player died");
     /// });
     ///
     /// #[cfg(debug_assertions)]
-    /// println!("{}", handler.debug_info());
-    /// // Output: "ComponentHandler<Entity> for Player (signature: Fn(&Acquirable<Player>, ()) -> ())"
+    /// {
+    ///     let info = handler.debug_info();
+    ///     assert!(info.contains("ComponentHandler"));
+    ///     assert!(info.contains("Player"));
+    /// }
     /// ```
     #[cfg(debug_assertions)]
     pub fn debug_info(&self) -> String {

@@ -71,3 +71,7 @@ pub use error::WorldError;
 pub use extractable::{Extractable, ExtractionMetadata};
 pub use handler::ComponentHandler;
 pub use world::World;
+
+// Test module
+#[cfg(test)]
+mod tests;
