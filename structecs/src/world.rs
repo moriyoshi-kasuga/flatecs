@@ -1,9 +1,6 @@
 use std::{
     any::TypeId,
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use dashmap::DashMap;
@@ -34,7 +31,7 @@ use crate::{
 #[derive(Default)]
 pub struct World {
     /// Archetypes indexed by their TypeId
-    pub(crate) archetypes: DashMap<ArchetypeId, Arc<Archetype>, FxBuildHasher>,
+    pub(crate) archetypes: DashMap<ArchetypeId, Archetype, FxBuildHasher>,
 
     /// Maps entity IDs to their archetype for fast lookup (lock-free concurrent access).
     pub(crate) entity_index: DashMap<EntityId, ArchetypeId, FxBuildHasher>,
@@ -54,17 +51,16 @@ impl World {
     }
 
     /// Get or create an archetype for type E.
-    fn get_archetype<E: Extractable>(&self) -> Arc<Archetype> {
+    fn get_archetype<E: Extractable>(
+        &self,
+    ) -> dashmap::mapref::one::RefMut<'_, ArchetypeId, Archetype> {
         let archetype_id = ArchetypeId::of::<E>();
 
-        self.archetypes
-            .entry(archetype_id)
-            .or_insert_with(|| {
-                let archetype = Archetype::new::<E>();
-                self.register_archetype_types(archetype_id, archetype.extractor.type_ids());
-                Arc::new(archetype)
-            })
-            .clone()
+        self.archetypes.entry(archetype_id).or_insert_with(|| {
+            let archetype = Archetype::new::<E>();
+            self.register_archetype_types(archetype_id, archetype.extractor.type_ids());
+            archetype
+        })
     }
 
     /// Register all component types that an archetype can provide
@@ -81,9 +77,12 @@ impl World {
         }
     }
 
-    fn get_archetype_by_entity(&self, entity_id: &EntityId) -> Option<Arc<Archetype>> {
+    fn get_archetype_by_entity(
+        &self,
+        entity_id: &EntityId,
+    ) -> Option<dashmap::mapref::one::Ref<'_, ArchetypeId, Archetype>> {
         let archetype_id = *self.entity_index.get(entity_id)?.value();
-        self.archetypes.get(&archetype_id).map(|a| a.clone())
+        self.archetypes.get(&archetype_id)
     }
 
     /// Add an entity to the world.
@@ -535,7 +534,7 @@ impl World {
 
         let matching: Vec<_> = archetype_ids
             .iter()
-            .filter_map(|aid| self.archetypes.get(aid).map(|a| a.clone()))
+            .filter_map(|aid| self.archetypes.get(aid))
             .collect();
 
         // Pre-allocate based on archetype count (heuristic: 16 entities per archetype)
