@@ -338,6 +338,9 @@ impl World {
     /// `remove_entity()` repeatedly because it processes entities in archetype
     /// groups, reducing overhead.
     ///
+    /// If you don't need error tracking and want to avoid allocations,
+    /// use `remove_entities()` instead.
+    ///
     /// # Thread Safety
     ///
     /// This method is thread-safe and can be called concurrently from multiple threads.
@@ -351,7 +354,7 @@ impl World {
     ///
     /// ```ignore
     /// let ids = vec![id1, id2, id3];
-    /// match world.remove_entities(&ids) {
+    /// match world.try_remove_entities(&ids) {
     ///     Ok(()) => println!("All entities removed"),
     ///     Err(WorldError::PartialRemoval { succeeded, failed }) => {
     ///         println!("Removed {} entities, {} failed", succeeded.len(), failed.len());
@@ -359,7 +362,7 @@ impl World {
     ///     _ => {}
     /// }
     /// ```
-    pub fn remove_entities(&self, entity_ids: &[EntityId]) -> Result<(), WorldError> {
+    pub fn try_remove_entities(&self, entity_ids: &[EntityId]) -> Result<(), WorldError> {
         // Group entity IDs by archetype
         let mut archetype_groups: FxHashMap<ArchetypeId, Vec<EntityId>> = FxHashMap::default();
         let mut not_found = Vec::new();
@@ -378,7 +381,7 @@ impl World {
         // Remove entities from each archetype
         let mut removed = Vec::new();
         let mut failed = not_found;
-        
+
         for (archetype_id, entities) in archetype_groups {
             if let Some(archetype) = self.archetypes.get(&archetype_id) {
                 for entity_id in entities {
@@ -400,6 +403,60 @@ impl World {
                 succeeded: removed,
                 failed,
             })
+        }
+    }
+
+    /// Remove multiple entities from the world in batch without error tracking.
+    ///
+    /// This is a zero-allocation variant of `try_remove_entities()` that silently skips
+    /// non-existent entities. Use this method when you don't need to know which
+    /// entities failed to remove and want maximum performance.
+    ///
+    /// # Performance
+    ///
+    /// This method is more efficient than `try_remove_entities()` because it:
+    /// - Does not allocate vectors to track succeeded/failed entities
+    /// - Groups entities by archetype to minimize archetype lookups
+    /// - Silently skips non-existent entities without error tracking overhead
+    ///
+    /// For bulk deletions where you don't care about individual failures,
+    /// this method provides the best performance.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe and can be called concurrently from multiple threads.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Fast batch removal, ignoring errors
+    /// let ids = vec![id1, id2, id3];
+    /// world.remove_entities(&ids);
+    /// println!("Batch removal completed");
+    /// ```
+    pub fn remove_entities(&self, entity_ids: &[EntityId]) {
+        // Group entity IDs by archetype (only allocates one HashMap)
+        let mut archetype_groups: FxHashMap<ArchetypeId, Vec<EntityId>> = FxHashMap::default();
+
+        for entity_id in entity_ids {
+            if let Some((_, archetype_id)) = self.entity_index.remove(entity_id) {
+                archetype_groups
+                    .entry(archetype_id)
+                    .or_default()
+                    .push(*entity_id);
+            }
+            // Silently skip non-existent entities
+        }
+
+        // Remove entities from each archetype
+        for (archetype_id, entities) in archetype_groups {
+            if let Some(archetype) = self.archetypes.get(&archetype_id) {
+                for entity_id in entities {
+                    // Silently ignore removal failures
+                    let _ = archetype.remove_entity(&entity_id);
+                }
+            }
+            // Silently skip if archetype not found
         }
     }
 

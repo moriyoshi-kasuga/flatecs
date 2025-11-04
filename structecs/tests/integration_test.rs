@@ -452,7 +452,7 @@ fn test_remove_entities_batch() {
     assert_eq!(world.entity_count(), 100);
 
     // Remove first 50 in batch
-    let result = world.remove_entities(&ids[0..50]);
+    let result = world.try_remove_entities(&ids[0..50]);
     assert!(result.is_ok());
     assert_eq!(world.entity_count(), 50);
 
@@ -466,7 +466,7 @@ fn test_remove_entities_empty() {
     let world = World::new();
 
     let ids: Vec<EntityId> = vec![];
-    let result = world.remove_entities(&ids);
+    let result = world.try_remove_entities(&ids);
     assert!(result.is_ok());
 }
 
@@ -481,7 +481,7 @@ fn test_remove_entities_nonexistent() {
         EntityId::from_raw(10001),
     ];
 
-    let result = world.remove_entities(&fake_ids);
+    let result = world.try_remove_entities(&fake_ids);
     // All entities are nonexistent, so we should get an error
     assert!(result.is_err());
     if let Err(WorldError::PartialRemoval { succeeded, failed }) = result {
@@ -510,7 +510,7 @@ fn test_remove_entities_mixed() {
 
     // Now try to remove batch including already-removed ones
     let remove_ids = vec![ids[0], ids[1], ids[2], ids[3], ids[4]];
-    let result = world.remove_entities(&remove_ids);
+    let result = world.try_remove_entities(&remove_ids);
 
     // Should have partial success: 3 succeeded (ids[2], ids[3], ids[4]), 2 failed (ids[0], ids[1])
     assert!(result.is_err());
@@ -544,7 +544,7 @@ fn test_remove_entities_different_types() {
 
     // Mix player and enemy IDs
     let mixed_ids = vec![player_ids[0], enemy_ids[0], player_ids[1], enemy_ids[1]];
-    let result = world.remove_entities(&mixed_ids);
+    let result = world.try_remove_entities(&mixed_ids);
 
     // All entities exist, so should succeed
     assert!(result.is_ok());
