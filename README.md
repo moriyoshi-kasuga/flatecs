@@ -21,7 +21,6 @@ This crate is currently under active development. The API is not stable and may 
 - ✅ Snapshot-based queries with type index
 - ✅ Thread-safe operations using DashMap
 - ✅ Comprehensive test suite (integration, concurrency, memory safety, edge cases)
-- 🔄 Query composition and filtering (planned)
 
 ---
 
@@ -190,13 +189,17 @@ if world.contains_entity(&player_id) {
 **Core operations:**
 
 - `add_entity<E: Extractable>(entity: E) -> EntityId` - Register new entity
+- `add_entity_with_acquirable<E: Extractable>(entity: E) -> (EntityId, Acquirable<E>)` - Add entity and get reference
+- `add_entities<E: Extractable>(entities: impl IntoIterator<Item = E>) -> Vec<EntityId>` - Bulk add entities (optimized)
 - `remove_entity(entity_id: &EntityId) -> Result<(), WorldError>` - Remove single entity from world
 - `try_remove_entities(entity_ids: &[EntityId]) -> Result<(), WorldError>` - Batch remove entities with error tracking
-- `remove_entities(entity_ids: &[EntityId]) -> ()` - Fast batch removal (silently skips not found)
+- `remove_entities(entity_ids: &[EntityId])` - Fast batch removal (silently skips not found)
 - `contains_entity(entity_id: &EntityId) -> bool` - Check if entity exists in world
 - `clear()` - Remove all entities from world
-- `query<T: 'static>() -> Vec<(EntityId, Acquirable<T>)>` - Snapshot of entities with component T
+- `query<T: 'static>() -> QueryIter<T>` - Lazy iterator over entities with component T
 - `extract_component<T>(entity_id: &EntityId) -> Result<Acquirable<T>, WorldError>` - Get specific component
+- `entity_count() -> usize` - Get total number of entities
+- `archetype_count() -> usize` - Get number of archetypes
 
 ### 4. Acquirable
 
@@ -205,8 +208,7 @@ A smart reference to a component that keeps the underlying entity data alive.
 ```rust
 pub struct Acquirable<T: 'static> {
     target: NonNull<T>,
-    inner: EntityDataInner,
-    // ...
+    inner: EntityData,
 }
 ```
 
@@ -228,7 +230,7 @@ The engine that performs type extraction using pre-computed offsets.
 
 ```rust
 pub struct Extractor {
-    offsets: HashMap<TypeId, usize>,
+    offsets: FxHashMap<TypeId, usize>,
     dropper: unsafe fn(NonNull<u8>),
 }
 ```
@@ -237,6 +239,65 @@ Each unique entity structure gets one `Extractor` (cached in `World`), which kno
 
 - Where each component type lives in memory (offset)
 - How to safely drop the entity when done
+
+---
+
+## Error Handling
+
+structecs provides a comprehensive error type for handling failures:
+
+```rust
+pub enum WorldError {
+    /// The specified entity was not found in the world
+    EntityNotFound(EntityId),
+    
+    /// The requested component type was not found on the entity
+    ComponentNotFound {
+        entity_id: EntityId,
+        component_name: &'static str,
+    },
+    
+    /// Batch removal completed with some failures
+    /// Contains successfully removed and failed entity IDs
+    PartialRemoval {
+        succeeded: Vec<EntityId>,
+        failed: Vec<EntityId>,
+    },
+    
+    /// Internal consistency error (should not occur in normal use)
+    ArchetypeNotFound(EntityId),
+}
+```
+
+**Error handling examples:**
+
+```rust
+// Single entity removal with error handling
+match world.remove_entity(&entity_id) {
+    Ok(()) => println!("Entity removed"),
+    Err(WorldError::EntityNotFound(id)) => println!("Entity {} not found", id),
+    Err(e) => println!("Error: {}", e),
+}
+
+// Batch removal with error tracking
+match world.try_remove_entities(&entity_ids) {
+    Ok(()) => println!("All entities removed"),
+    Err(WorldError::PartialRemoval { succeeded, failed }) => {
+        println!("Removed: {}, Failed: {}", succeeded.len(), failed.len());
+    }
+    Err(e) => println!("Error: {}", e),
+}
+
+// Component extraction with error handling
+match world.extract_component::<Health>(&entity_id) {
+    Ok(health) => println!("Health: {}", health.value),
+    Err(WorldError::EntityNotFound(id)) => println!("Entity not found"),
+    Err(WorldError::ComponentNotFound { entity_id, component_name }) => {
+        println!("Component {} not found on entity {}", component_name, entity_id);
+    }
+    Err(e) => println!("Error: {}", e),
+}
+```
 
 ---
 
@@ -367,9 +428,9 @@ structecs is designed for high performance with real-world workloads:
 
 **Basic Operations:**
 
-- Adding 10,000 entities: ~2.6ms
-- Querying 10,000 entities: ~343µs
-- Querying specific type (10,000): ~180µs
+- Adding 10,000 entities: ~2.7ms
+- Querying 10,000 entities: ~273µs
+- Querying specific type (10,000): ~137µs
 
 **Key Optimizations:**
 
@@ -426,7 +487,6 @@ cargo test --test edge_cases_test
 
 ### Phase 2: Multi-threading (Partially Completed)
 
-- [ ] Parallel query execution with Rayon (planned)
 - [x] Thread-safe World operations with DashMap
 - [x] Fine-grained locking per archetype (short-lived)
 - [x] Comprehensive concurrency tests
@@ -435,12 +495,7 @@ cargo test --test edge_cases_test
 
 - [x] Entity removal
 - [x] Memory safety verification
-- [x] Comprehensive test suite (118 tests)
-
-### Phase 4: Features (In Progress)
-
-- [ ] Query filtering and composition (planned)
-- [ ] Error handling improvements (planned)
+- [x] Comprehensive test suite
 
 ---
 

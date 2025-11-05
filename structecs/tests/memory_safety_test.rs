@@ -83,7 +83,7 @@ fn test_large_entity_lifecycle() {
     }
 
     // Query and verify
-    let count = world.query::<LargeEntity>().len();
+    let count = world.query::<LargeEntity>().count();
     assert_eq!(count, 100);
 
     // Remove half
@@ -195,12 +195,12 @@ fn test_queryator_safety() {
     let iter3 = world.query::<TestEntity>();
 
     // Consume iterators
-    assert_eq!(iter1.len(), 1000);
-    assert_eq!(iter2.len(), 1000);
-    assert_eq!(iter3.len(), 1000);
+    assert_eq!(iter1.count(), 1000);
+    assert_eq!(iter2.count(), 1000);
+    assert_eq!(iter3.count(), 1000);
 
     // Original data should still be accessible
-    assert_eq!(world.query::<TestEntity>().len(), 1000);
+    assert_eq!(world.query::<TestEntity>().count(), 1000);
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn test_query_memory_safety() {
 
     // Run query multiple times
     for _ in 0..10 {
-        let count: usize = world.query::<TestEntity>().len();
+        let count: usize = world.query::<TestEntity>().count();
 
         assert_eq!(count, 10_000);
     }

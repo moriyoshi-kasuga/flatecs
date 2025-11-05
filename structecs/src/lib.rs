@@ -84,6 +84,7 @@ mod extractable;
 mod extractor;
 mod handler;
 mod world;
+mod query;
 
 // Public exports
 pub use acquirable::Acquirable;
@@ -92,6 +93,7 @@ pub use error::WorldError;
 pub use extractable::{Extractable, ExtractionMetadata};
 pub use handler::ComponentHandler;
 pub use world::World;
+pub use query::QueryIter;
 
 // Test module
 #[cfg(test)]

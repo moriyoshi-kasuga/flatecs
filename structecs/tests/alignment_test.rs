@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::mem::{align_of, size_of};
 use structecs::*;
 
@@ -109,7 +111,7 @@ fn test_zst_handling() {
     assert_eq!(world.entity_count(), 101);
 
     // Query ZST entities
-    let count = world.query::<ZeroSized>().len();
+    let count = world.query::<ZeroSized>().count();
     assert_eq!(count, 101);
 }
 
@@ -151,7 +153,7 @@ fn test_alignment_with_query() {
     }
 
     // Query and verify all pointers are properly aligned
-    let results = world.query::<Aligned16>();
+    let results = world.query::<Aligned16>().collect::<Vec<_>>();
     assert_eq!(results.len(), 100);
 
     for (_id, component) in results {

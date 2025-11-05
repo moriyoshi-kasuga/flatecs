@@ -1,4 +1,6 @@
-use std::{any::TypeId, collections::HashMap};
+use std::any::TypeId;
+
+use rustc_hash::FxHashMap;
 
 /// Trait for types that can be extracted from entity data.
 ///
@@ -42,8 +44,8 @@ impl ExtractionMetadata {
     }
 
     /// Flatten nested metadata into a single HashMap of type -> offset mappings.
-    pub fn flatten(list: &[ExtractionMetadata]) -> HashMap<TypeId, usize> {
-        let mut result = HashMap::new();
+    pub fn flatten(list: &[ExtractionMetadata]) -> FxHashMap<TypeId, usize> {
+        let mut result = FxHashMap::default();
         Self::flatten_internal(list, 0, &mut result);
         result
     }
@@ -51,7 +53,7 @@ impl ExtractionMetadata {
     fn flatten_internal(
         list: &[ExtractionMetadata],
         base_offset: usize,
-        result: &mut HashMap<TypeId, usize>,
+        result: &mut FxHashMap<TypeId, usize>,
     ) {
         for metadata in list {
             match metadata {

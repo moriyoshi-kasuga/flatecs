@@ -12,14 +12,14 @@ pub struct Archetype {
     pub(crate) extractor: Arc<Extractor>,
 
     /// Entities stored in this archetype.
-    pub(crate) entities: DashMap<EntityId, EntityData, FxBuildHasher>,
+    pub(crate) entities: Arc<DashMap<EntityId, EntityData, FxBuildHasher>>,
 }
 
 impl Archetype {
     pub(crate) fn new<E: Extractable>() -> Self {
         Self {
             extractor: Arc::new(Extractor::new::<E>()),
-            entities: DashMap::with_hasher(FxBuildHasher),
+            entities: Arc::new(DashMap::with_hasher(FxBuildHasher)),
         }
     }
 
@@ -27,22 +27,6 @@ impl Archetype {
         let data = EntityData::new(entity, self.extractor.clone());
         self.entities.insert(id, data.clone());
         data
-    }
-
-    /// Iterate over entities that have component T.
-    pub(crate) unsafe fn iter_component_unchecked<T: 'static>(
-        &self,
-    ) -> impl Iterator<Item = (EntityId, Acquirable<T>)> {
-        // SAFETY: The caller guarantees that this archetype contains type T
-        // (typically verified via type index before calling this method).
-        let offset = unsafe { self.extractor.offset(&TypeId::of::<T>()).unwrap_unchecked() };
-        self.entities.iter().map(move |v| {
-            let (id, data) = v.pair();
-            // SAFETY: The offset is valid for type T in this archetype,
-            // and all entities in this archetype have the same structure.
-            let component = unsafe { data.extract_by_offset::<T>(offset) };
-            (*id, component)
-        })
     }
 
     /// Get entity data by ID.

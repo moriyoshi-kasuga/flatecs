@@ -235,8 +235,8 @@ fn test_query_multiple_types() {
         });
     }
 
-    let player_count = world.query::<Player>().len();
-    let enemy_count = world.query::<Enemy>().len();
+    let player_count = world.query::<Player>().count();
+    let enemy_count = world.query::<Enemy>().count();
 
     assert_eq!(player_count, 5);
     assert_eq!(enemy_count, 3);
@@ -256,7 +256,7 @@ fn test_large_entity_set() {
 
     assert_eq!(world.entity_count(), 10_000);
 
-    let query_count = world.query::<Player>().len();
+    let query_count = world.query::<Player>().count();
     assert_eq!(query_count, 10_000);
 }
 
@@ -296,7 +296,7 @@ fn test_mixed_operations() {
     assert_eq!(world.entity_count(), 120);
 
     // Verify query
-    let count = world.query::<Player>().len();
+    let count = world.query::<Player>().count();
     assert_eq!(count, 120);
 }
 
@@ -348,7 +348,7 @@ fn test_query_consistency() {
 
     // Run multiple queries and ensure consistent results
     for _ in 0..10 {
-        let count = world.query::<Player>().len();
+        let count = world.query::<Player>().count();
         assert_eq!(count, 100);
     }
 }
@@ -400,7 +400,7 @@ fn test_add_entities_batch() {
 
     // Verify all entities can be queried
     let players = world.query::<Player>();
-    assert_eq!(players.len(), 10);
+    assert_eq!(players.count(), 10);
 }
 
 #[test]
@@ -431,7 +431,7 @@ fn test_add_entities_large_batch() {
     assert_eq!(world.entity_count(), 10_000);
 
     let players = world.query::<Player>();
-    assert_eq!(players.len(), 10_000);
+    assert_eq!(players.count(), 10_000);
 }
 
 #[test]
@@ -458,7 +458,7 @@ fn test_remove_entities_batch() {
 
     // Verify remaining entities
     let players = world.query::<Player>();
-    assert_eq!(players.len(), 50);
+    assert_eq!(players.count(), 50);
 }
 
 #[test]

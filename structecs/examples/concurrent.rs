@@ -96,8 +96,8 @@ fn main() {
     println!("Total archetypes: {}", world.archetype_count());
 
     // Query from main thread while other threads might still be operating
-    let player_count = world.query::<Player>().len();
-    let monster_count = world.query::<Monster>().len();
+    let player_count = world.query::<Player>().count();
+    let monster_count = world.query::<Monster>().count();
 
     println!("Players: {}", player_count);
     println!("Monsters: {}", monster_count);
@@ -111,7 +111,6 @@ fn main() {
         let start = std::time::Instant::now();
         let total_health: u32 = world_clone
             .query::<Player>()
-            .into_iter()
             .map(|(_, player)| player.health)
             .sum();
         let elapsed = start.elapsed();
@@ -128,7 +127,6 @@ fn main() {
         let start = std::time::Instant::now();
         let total_damage: u32 = world_clone
             .query::<Monster>()
-            .into_iter()
             .map(|(_, monster)| monster.damage)
             .sum();
         let elapsed = start.elapsed();
@@ -143,7 +141,7 @@ fn main() {
     let world_clone = Arc::clone(&world);
     let handle = thread::spawn(move || {
         let start = std::time::Instant::now();
-        let count = world_clone.query::<Entity>().len();
+        let count = world_clone.query::<Entity>().count();
         let elapsed = start.elapsed();
         println!(
             "Thread 3: Queried all entities, count = {} in {:?}",

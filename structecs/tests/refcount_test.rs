@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -262,7 +264,7 @@ fn test_refcount_with_query() {
 
     // Query again - should still work
     let results = world.query::<TestComponent>();
-    assert_eq!(results.len(), 100);
+    assert_eq!(results.count(), 100);
 }
 
 #[test]
