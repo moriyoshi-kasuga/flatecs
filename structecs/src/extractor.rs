@@ -14,9 +14,7 @@ impl Extractor {
     /// Create a new extractor for the given extractable type.
     pub(crate) fn new<E: Extractable>() -> Self {
         Self {
-            offsets: ExtractionMetadata::flatten(E::METADATA_LIST)
-                .into_iter()
-                .collect(),
+            offsets: ExtractionMetadata::flatten(E::METADATA_LIST),
             dropper: |ptr| {
                 // SAFETY: The pointer was created from Box::into_raw with type E,
                 // so it's safe to reconstruct and drop the Box<E>.
