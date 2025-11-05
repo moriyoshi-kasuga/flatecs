@@ -97,7 +97,7 @@ fn test_concurrent_reads_while_writing() {
         let world_reader = Arc::clone(&world);
         let reader = thread::spawn(move || {
             for _ in 0..100 {
-                let count = world_reader.query::<Player>().len();
+                let count = world_reader.query::<Player>().count();
                 assert!((1000..=2000).contains(&count));
                 thread::sleep(Duration::from_micros(10));
             }
@@ -210,7 +210,7 @@ fn test_concurrent_mixed_operations() {
         let world_clone = Arc::clone(&world);
         let handle = thread::spawn(move || {
             for _ in 0..50 {
-                let _count = world_clone.query::<Player>().len();
+                let _count = world_clone.query::<Player>().count();
             }
         });
         handles.push(handle);
@@ -270,8 +270,8 @@ fn test_concurrent_multiple_entity_types() {
         handle.join().unwrap();
     }
 
-    assert_eq!(world.query::<Player>().len(), 1000);
-    assert_eq!(world.query::<Enemy>().len(), 1000);
+    assert_eq!(world.query::<Player>().count(), 1000);
+    assert_eq!(world.query::<Enemy>().count(), 1000);
     assert_eq!(world.entity_count(), 2000);
 }
 

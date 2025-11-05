@@ -262,7 +262,7 @@ fn test_refcount_with_query() {
 
     // Query again - should still work
     let results = world.query::<TestComponent>();
-    assert_eq!(results.len(), 100);
+    assert_eq!(results.count(), 100);
 }
 
 #[test]

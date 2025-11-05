@@ -16,7 +16,7 @@ fn test_empty_world_operations() {
     let world = World::default();
 
     // Query empty world
-    assert_eq!(world.query::<Player>().len(), 0);
+    assert_eq!(world.query::<Player>().count(), 0);
 }
 
 #[test]
@@ -28,15 +28,15 @@ fn test_single_entity() {
         score: 100,
     });
 
-    assert_eq!(world.query::<Player>().len(), 1);
+    assert_eq!(world.query::<Player>().count(), 1);
 
-    let (_id, player) = &world.query::<Player>()[0];
+    let (_id, player) = &world.query::<Player>().next().unwrap();
     assert_eq!(player.name, "Solo");
     assert_eq!(player.score, 100);
 
     let removed = world.remove_entity(&id);
     assert!(removed.is_ok());
-    assert_eq!(world.query::<Player>().len(), 0);
+    assert_eq!(world.query::<Player>().count(), 0);
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn test_multiple_same_type_entities() {
     });
 
     // 3つのエンティティが存在するはず
-    assert_eq!(world.query::<Player>().len(), 3);
+    assert_eq!(world.query::<Player>().count(), 3);
 
     // それぞれのIDは異なるはず
     assert_ne!(id1, id2);
@@ -70,7 +70,7 @@ fn test_multiple_same_type_entities() {
     // 1つ削除
     let removed = world.remove_entity(&id2);
     assert!(removed.is_ok());
-    assert_eq!(world.query::<Player>().len(), 2);
+    assert_eq!(world.query::<Player>().count(), 2);
 
     // 残りのエンティティを確認
     let names: Vec<_> = world
@@ -92,7 +92,7 @@ fn test_empty_string_name() {
         score: 0,
     });
 
-    let (_id, player) = &world.query::<Player>()[0];
+    let (_id, player) = &world.query::<Player>().next().unwrap();
     assert_eq!(player.name, "");
 }
 
@@ -106,7 +106,7 @@ fn test_very_long_string() {
         score: 0,
     });
 
-    let (_id, player) = &world.query::<Player>()[0];
+    let (_id, player) = &world.query::<Player>().next().unwrap();
     assert_eq!(player.name, long_name);
     assert_eq!(player.name.len(), 10_000);
 }
@@ -120,7 +120,7 @@ fn test_unicode_string() {
         score: 42,
     });
 
-    let (_id, player) = &world.query::<Player>()[0];
+    let (_id, player) = &world.query::<Player>().next().unwrap();
     assert_eq!(player.name, "こんにちは世界🌍");
 }
 
@@ -155,14 +155,14 @@ fn test_query_after_all_removed() {
         ids.push(id);
     }
 
-    assert_eq!(world.query::<Player>().len(), 100);
+    assert_eq!(world.query::<Player>().count(), 100);
 
     // 全て削除
     for id in ids {
         let _ = world.remove_entity(&id);
     }
 
-    assert_eq!(world.query::<Player>().len(), 0);
+    assert_eq!(world.query::<Player>().count(), 0);
 }
 
 #[test]
@@ -186,7 +186,7 @@ fn test_interleaved_insert_remove() {
     }
 
     // 最後の2つだけが残っているはず
-    assert_eq!(world.query::<Player>().len(), active_ids.len());
+    assert_eq!(world.query::<Player>().count(), active_ids.len());
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn test_zero_score() {
         score: 0,
     });
 
-    let (_id, player) = &world.query::<Player>()[0];
+    let (_id, player) = &world.query::<Player>().next().unwrap();
     assert_eq!(player.score, 0);
 }
 
@@ -211,7 +211,7 @@ fn test_max_score() {
         score: u32::MAX,
     });
 
-    let (_id, player) = &world.query::<Player>()[0];
+    let (_id, player) = &world.query::<Player>().next().unwrap();
     assert_eq!(player.score, u32::MAX);
 }
 
@@ -228,7 +228,7 @@ fn test_consecutive_queries() {
 
     // 連続してクエリを実行
     for _ in 0..10 {
-        assert_eq!(world.query::<Player>().len(), 100);
+        assert_eq!(world.query::<Player>().count(), 100);
     }
 }
 
@@ -243,7 +243,7 @@ fn test_query_during_modifications() {
         });
     }
 
-    let initial_count = world.query::<Player>().len();
+    let initial_count = world.query::<Player>().count();
     assert_eq!(initial_count, 50);
 
     // クエリ後に追加
@@ -255,7 +255,7 @@ fn test_query_during_modifications() {
     }
 
     // 新しいクエリで確認
-    let final_count = world.query::<Player>().len();
+    let final_count = world.query::<Player>().count();
     assert_eq!(final_count, 100);
 }
 
@@ -272,18 +272,18 @@ fn test_different_types_same_world() {
     let enemy_id = world.add_entity(Enemy { health: 50 });
 
     // それぞれのクエリで確認
-    assert_eq!(world.query::<Player>().len(), 1);
-    assert_eq!(world.query::<Enemy>().len(), 1);
+    assert_eq!(world.query::<Player>().count(), 1);
+    assert_eq!(world.query::<Enemy>().count(), 1);
 
     // 片方を削除
     let _ = world.remove_entity(&player_id);
 
     // もう片方は残っているはず
-    assert_eq!(world.query::<Player>().len(), 0);
-    assert_eq!(world.query::<Enemy>().len(), 1);
+    assert_eq!(world.query::<Player>().count(), 0);
+    assert_eq!(world.query::<Enemy>().count(), 1);
 
     let _ = world.remove_entity(&enemy_id);
-    assert_eq!(world.query::<Enemy>().len(), 0);
+    assert_eq!(world.query::<Enemy>().count(), 0);
 }
 
 #[test]
@@ -302,7 +302,7 @@ fn test_rapid_add_remove_cycle() {
     }
 
     // 奇数回のiterationsのみ残っているはず（50個）
-    assert_eq!(world.query::<Player>().len(), 50);
+    assert_eq!(world.query::<Player>().count(), 50);
 }
 
 #[test]
@@ -320,14 +320,14 @@ fn test_many_entities_same_type() {
         ids.push(id);
     }
 
-    assert_eq!(world.query::<Player>().len(), count as usize);
+    assert_eq!(world.query::<Player>().count(), count as usize);
 
     // 半分を削除
     for i in (0..count).step_by(2) {
         let _ = world.remove_entity(&ids[i as usize]);
     }
 
-    assert_eq!(world.query::<Player>().len(), (count / 2) as usize);
+    assert_eq!(world.query::<Player>().count(), (count / 2) as usize);
 }
 
 #[test]
@@ -344,7 +344,7 @@ fn test_archetype_with_clones() {
         world.add_entity(template.clone());
     }
 
-    assert_eq!(world.query::<Player>().len(), 10);
+    assert_eq!(world.query::<Player>().count(), 10);
 
     // 全て同じデータを持っているはず
     for (_id, player) in world.query::<Player>() {
