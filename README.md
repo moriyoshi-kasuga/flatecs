@@ -429,9 +429,9 @@ structecs is designed for high performance with real-world workloads:
 
 **Basic Operations:**
 
-- Adding 10,000 entities: ~2.6ms
-- Querying 10,000 entities: ~343µs
-- Querying specific type (10,000): ~180µs
+- Adding 10,000 entities: ~2.7ms
+- Querying 10,000 entities: ~273µs
+- Querying specific type (10,000): ~137µs
 
 **Key Optimizations:**
 
