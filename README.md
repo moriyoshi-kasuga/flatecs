@@ -21,7 +21,6 @@ This crate is currently under active development. The API is not stable and may 
 - ✅ Snapshot-based queries with type index
 - ✅ Thread-safe operations using DashMap
 - ✅ Comprehensive test suite (integration, concurrency, memory safety, edge cases)
-- 🔄 Query composition and filtering (planned)
 
 ---
 
@@ -489,7 +488,6 @@ cargo test --test edge_cases_test
 
 ### Phase 2: Multi-threading (Partially Completed)
 
-- [ ] Parallel query execution with Rayon (planned)
 - [x] Thread-safe World operations with DashMap
 - [x] Fine-grained locking per archetype (short-lived)
 - [x] Comprehensive concurrency tests
@@ -498,12 +496,7 @@ cargo test --test edge_cases_test
 
 - [x] Entity removal
 - [x] Memory safety verification
-- [x] Comprehensive test suite (118 tests)
-
-### Phase 4: Features (In Progress)
-
-- [ ] Query filtering and composition (planned)
-- [ ] Error handling improvements (planned)
+- [x] Comprehensive test suite
 
 ---
 
