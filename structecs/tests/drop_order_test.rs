@@ -1,6 +1,7 @@
 //! Drop Order and Correctness Tests
 //!
 //! コンポーネントのドロップ順序と正確性を検証するテストスイート
+#![allow(dead_code)]
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

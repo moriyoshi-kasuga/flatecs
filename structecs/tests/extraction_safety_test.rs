@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
@@ -280,20 +282,20 @@ fn test_extract_stress() {
     }
 
     // Remove half
-    for i in 0..500 {
+    (0..500).for_each(|i| {
         world.remove_entity(&ids[i]).unwrap();
-    }
+    });
 
     // Remaining half should still be extractable
-    for i in 500..1000 {
+    (500..1000).for_each(|i| {
         let comp = world.extract_component::<Component1>(&ids[i]).unwrap();
         assert_eq!(comp.value, i as i32);
-    }
+    });
 
     // Removed half should not be extractable
-    for i in 0..500 {
+    (0..500).for_each(|i| {
         assert!(world.extract_component::<Component1>(&ids[i]).is_err());
-    }
+    });
 }
 
 #[test]
