@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::{any::TypeId, ptr::NonNull};
 
 use rustc_hash::FxHashMap;
 
@@ -9,6 +9,30 @@ pub trait Extractable: 'static + Sized {
     /// Metadata describing how to extract components from this type.
     const METADATA_LIST: &'static [ExtractionMetadata];
 }
+
+pub struct ExtractableType {
+    pub type_id: TypeId,
+    pub metadata: &'static [ExtractionMetadata],
+    pub dropper: unsafe fn(NonNull<u8>),
+}
+
+impl ExtractableType {
+    pub const fn new<T: Extractable>() -> Self {
+        Self {
+            type_id: TypeId::of::<T>(),
+            metadata: T::METADATA_LIST,
+            dropper: |data_ptr: NonNull<u8>| {
+                // SAFETY: The caller guarantees that data_ptr points to a valid instance of T.
+                unsafe {
+                    let boxed: Box<T> = Box::from_raw(data_ptr.as_ptr() as *mut T);
+                    drop(boxed);
+                }
+            },
+        }
+    }
+}
+
+inventory::collect!(ExtractableType);
 
 /// Metadata describing how to extract types from an entity structure.
 pub enum ExtractionMetadata {

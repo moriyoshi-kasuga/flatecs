@@ -2,7 +2,7 @@ use std::{any::TypeId, ptr::NonNull};
 
 use rustc_hash::FxHashMap;
 
-use crate::{Extractable, ExtractionMetadata};
+use crate::{ExtractionMetadata, extractable::ExtractableType};
 
 /// Extracts components from entity data using pre-computed offsets.
 pub struct Extractor {
@@ -11,17 +11,10 @@ pub struct Extractor {
 }
 
 impl Extractor {
-    /// Create a new extractor for the given extractable type.
-    pub(crate) fn new<E: Extractable>() -> Self {
+    pub(crate) fn new_type(target: &ExtractableType) -> Self {
         Self {
-            offsets: ExtractionMetadata::flatten(E::METADATA_LIST),
-            dropper: |ptr| {
-                // SAFETY: The pointer was created from Box::into_raw with type E,
-                // so it's safe to reconstruct and drop the Box<E>.
-                unsafe {
-                    drop(Box::from_raw(ptr.as_ptr() as *mut E));
-                }
-            },
+            offsets: ExtractionMetadata::flatten(target.metadata),
+            dropper: target.dropper,
         }
     }
 

@@ -37,7 +37,7 @@ pub(crate) struct EntityDataInner {
     pub(crate) data: NonNull<u8>,
 
     /// Extractor for component access
-    pub(crate) extractor: Arc<Extractor>,
+    pub(crate) extractor: &'static Extractor,
 }
 
 unsafe impl Send for EntityDataInner {}
@@ -55,7 +55,7 @@ pub struct EntityData {
 }
 
 impl EntityData {
-    pub(crate) fn new<E: crate::Extractable>(entity: E, extractor: Arc<Extractor>) -> Self {
+    pub(crate) fn new<E: crate::Extractable>(entity: E, extractor: &'static Extractor) -> Self {
         let ptr = Box::into_raw(Box::new(entity)) as *mut u8;
         let inner = EntityDataInner {
             // SAFETY: Box::into_raw never returns null
