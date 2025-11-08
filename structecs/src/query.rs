@@ -1,17 +1,18 @@
 use std::{any::TypeId, sync::Arc};
 
-use dashmap::{DashMap, iter::Iter};
-use rustc_hash::FxBuildHasher;
+use parking_lot::{RwLock, lock_api::RawRwLock};
+use rustc_hash::FxHashMap;
 
 use crate::{EntityId, Extractable, World, entity::EntityData};
 
-type DashMapIter<'a> = Iter<'a, EntityId, EntityData, FxBuildHasher>;
+type MapIter<'a> = std::collections::hash_map::Iter<'a, EntityId, EntityData>;
+
+type Map = Arc<RwLock<FxHashMap<EntityId, EntityData>>>;
 
 pub struct QueryIter<T: 'static> {
     _phantom: std::marker::PhantomData<T>,
-    #[allow(clippy::type_complexity)]
-    matching: Vec<(usize, Arc<DashMap<EntityId, EntityData, FxBuildHasher>>)>,
-    current: Option<(usize, DashMapIter<'static>)>,
+    matching: Vec<(usize, Map)>,
+    current: Option<(usize, Map, MapIter<'static>)>,
 }
 
 impl<T: 'static> QueryIter<T> {
@@ -46,25 +47,30 @@ impl<T: Extractable> Iterator for QueryIter<T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some((offset, current_iter)) = &mut self.current {
-                if let Some(entry) = current_iter.next() {
-                    let entity_id = *entry.key();
-                    let entity_data = entry.value();
-                    return Some((entity_id, unsafe { entity_data.extract_by_offset(*offset) }));
+            if let Some((offset, map, current_iter)) = &mut self.current {
+                if let Some((entity_id, entity_data)) = current_iter.next() {
+                    return Some((*entity_id, unsafe {
+                        entity_data.extract_by_offset(*offset)
+                    }));
                 } else {
+                    unsafe { map.raw().unlock_shared() }
                     self.current = None;
                 }
             } else if let Some((offset, next_map)) = self.matching.pop() {
-                let iter = next_map.iter();
-                // SAFETY: We transmute the lifetime of the iterator to 'static because
-                // the underlying DashMap is held in an Arc within the QueryIter struct,
-                // ensuring that it lives as long as the QueryIter itself.
-                let iter =
-                    unsafe { std::mem::transmute::<DashMapIter<'_>, DashMapIter<'static>>(iter) };
-                self.current = Some((offset, iter));
+                unsafe { next_map.raw().lock_shared() };
+                let iter = unsafe { &*next_map.data_ptr() }.iter();
+                self.current = Some((offset, next_map, iter));
             } else {
                 return None;
             }
+        }
+    }
+}
+
+impl<T: 'static> Drop for QueryIter<T> {
+    fn drop(&mut self) {
+        if let Some((_, map, _)) = &self.current {
+            unsafe { map.raw().unlock_shared() }
         }
     }
 }
