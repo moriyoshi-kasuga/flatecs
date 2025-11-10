@@ -16,11 +16,10 @@ categories = ["game-development", "data-structures", "concurrency"]
 workspace = true
 
 [dependencies]
+dashmap = { version = "6.1", features = ["raw-api"] }
 rustc-hash = "2.1"
-inventory = "0.3"
-parking_lot = "0.12"
-dashmap = "6.1"
 structecs-macros = { path = "../structecs-macros", version = "0" }
+inventory = "0.3"
 
 [dev-dependencies]
 criterion = "0.7"

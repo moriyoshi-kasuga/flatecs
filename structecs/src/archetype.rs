@@ -1,7 +1,7 @@
 use std::{any::TypeId, sync::Arc};
 
-use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
+use dashmap::DashMap;
+use rustc_hash::FxBuildHasher;
 
 use crate::{Acquirable, EntityId, Extractable, entity::EntityData, extractor::Extractor};
 
@@ -11,34 +11,33 @@ pub struct Archetype {
     pub(crate) extractor: &'static Extractor,
 
     /// Entities stored in this archetype.
-    pub(crate) entities: Arc<RwLock<FxHashMap<EntityId, EntityData>>>,
+    pub(crate) entities: Arc<DashMap<EntityId, EntityData, FxBuildHasher>>,
 }
 
 impl Archetype {
     pub(crate) fn new<E: Extractable>() -> Self {
         Self {
             extractor: crate::get_extractor::<E>(),
-            entities: Arc::new(RwLock::new(FxHashMap::default())),
+            entities: Arc::new(DashMap::with_hasher(FxBuildHasher)),
         }
     }
 
     pub(crate) fn add_entity<E: Extractable>(&self, id: EntityId, entity: E) -> EntityData {
         let data = EntityData::new(entity, self.extractor);
-        self.entities.write().insert(id, data.clone());
+        self.entities.insert(id, data.clone());
         data
     }
 
     /// Get entity data by ID.
     pub(crate) fn extract_entity<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
         self.entities
-            .read()
             .get(entity_id)
             .and_then(|data| data.extract::<T>())
     }
 
     /// Remove an entity by ID.
     pub(crate) fn remove_entity(&self, entity_id: &EntityId) -> Option<EntityData> {
-        self.entities.write().remove(entity_id)
+        self.entities.remove(entity_id).map(|(_, data)| data)
     }
 }
 
