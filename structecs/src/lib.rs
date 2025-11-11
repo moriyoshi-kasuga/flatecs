@@ -8,6 +8,8 @@ pub use structecs_macros::Extractable;
 
 // Module declarations
 mod acquirable;
+#[cfg(feature = "archetype")]
+mod archetype;
 mod entity;
 mod extractable;
 mod extractor;
@@ -15,6 +17,8 @@ mod handler;
 
 // Public exports
 pub use acquirable::{Acquirable, WeakAcquirable};
+#[cfg(feature = "archetype")]
+pub use archetype::Archetype;
 pub use extractable::{Extractable, ExtractableType, ExtractionMetadata};
 pub use handler::ComponentHandler;
 
