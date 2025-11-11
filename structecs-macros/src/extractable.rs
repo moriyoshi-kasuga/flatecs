@@ -64,9 +64,18 @@ pub(crate) fn internal_derive(input: DeriveInput) -> syn::Result<TokenStream> {
         .iter()
         .map(|field_ident| {
             let target_type = field_idents.get(field_ident).ok_or_else(|| {
+                let available_fields: Vec<String> = field_idents
+                    .keys()
+                    .map(|ident| format!("'{}'", ident))
+                    .collect();
+                let suggestion = if available_fields.is_empty() {
+                    String::from("This struct has no fields.")
+                } else {
+                    format!("Available fields: {}", available_fields.join(", "))
+                };
                 syn::Error::new_spanned(
                     field_ident,
-                    format!("Field '{}' not found in struct.", field_ident),
+                    format!("Field '{}' not found in struct. {}", field_ident, suggestion),
                 )
             })?;
 
