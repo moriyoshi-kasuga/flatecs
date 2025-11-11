@@ -327,6 +327,39 @@ The key insight: **You decide how to organize your data**. Per-chunk HashMap? Pe
 
 ---
 
+## Feature Flags
+
+structecs provides optional features that can be enabled in your `Cargo.toml`:
+
+| Feature | Description | Default |
+|---------|-------------|---------|
+| `archetype` | Provides `Archetype<Key, Base>` - a thread-safe, type-checked HashMap wrapper for storing entities by a common base type. Useful for quick prototyping or simple use cases. | ❌ Disabled |
+
+**Example: Enabling features**
+
+```toml
+[dependencies]
+# Enable the archetype feature
+structecs = { version = "0.3", features = ["archetype"] }
+
+# Or use default (no features)
+structecs = "0.3"
+```
+
+**When to use `archetype`:**
+
+- ✅ You want a pre-built collection for storing entities
+- ✅ You need thread-safe access with `Arc<RwLock<HashMap>>`
+- ✅ You're prototyping and don't want to build custom storage
+
+**When NOT to use `archetype`:**
+
+- ❌ You need custom storage structures (spatial indexes, quad-trees, etc.)
+- ❌ You want full control over locking strategies
+- ❌ You're building a specialized data management system
+
+---
+
 ## Resources
 
 - **[API Documentation](https://docs.rs/structecs)** - Full API reference

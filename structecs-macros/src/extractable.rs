@@ -75,7 +75,10 @@ pub(crate) fn internal_derive(input: DeriveInput) -> syn::Result<TokenStream> {
                 };
                 syn::Error::new_spanned(
                     field_ident,
-                    format!("Field '{}' not found in struct. {}", field_ident, suggestion),
+                    format!(
+                        "Field '{}' not found in struct. {}",
+                        field_ident, suggestion
+                    ),
                 )
             })?;
 

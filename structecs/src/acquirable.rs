@@ -108,12 +108,12 @@ impl<T: Extractable> Acquirable<T> {
     ///
     /// #[derive(Extractable)]
     /// #[extractable(entity)]
-    /// struct Player { 
-    ///     entity: Entity, 
-    ///     name: String 
+    /// struct Player {
+    ///     entity: Entity,
+    ///     name: String
     /// }
     ///
-    /// let player_data = Player { 
+    /// let player_data = Player {
     ///     entity: Entity { id: 42 },
     ///     name: "Steve".to_string(),
     /// };
@@ -135,7 +135,12 @@ impl<T: Extractable> Acquirable<T> {
             }
         }
         let data = Arc::new(EntityData::new(target, crate::get_extractor::<U>()));
-        // SAFETY: The above compile-time check ensures that U contains T.
+        // SAFETY: unwrap_unchecked is safe here because:
+        // 1. The compile-time check above (in debug builds) ensures U contains T in its metadata
+        // 2. extract_ptr returns None only when the type is not found in the metadata
+        // 3. Since U contains T by construction (verified at compile-time), extract_ptr<T>()
+        //    will always return Some(ptr)
+        // 4. In release builds, incorrect usage is caught by the debug build tests
         let extracted = unsafe { data.extract_ptr::<T>().unwrap_unchecked() };
         Acquirable::new_raw(extracted, data)
     }
@@ -200,7 +205,12 @@ impl<T: Extractable> Acquirable<T> {
                 panic!("Type T must contain U as extractable component")
             }
         }
-        // SAFETY: The above compile-time check ensures that T contains U.
+        // SAFETY: unwrap_unchecked is safe here because:
+        // 1. The compile-time check above (in debug builds) ensures T contains U in its metadata
+        // 2. The EntityData was created with an Extractor that knows about all extractable types
+        // 3. extract_ptr returns None only when the type is not in the metadata
+        // 4. Since T contains U (verified at compile-time), extract_ptr<U>() always returns Some(ptr)
+        // 5. The pointer is valid as long as `self.inner` is alive, which is guaranteed by Arc
         let extracted = unsafe { self.inner.extract_ptr::<U>().unwrap_unchecked() };
         Acquirable::new_raw(extracted, self.inner.clone())
     }
@@ -380,6 +390,13 @@ impl<T: Extractable> WeakAcquirable<T> {
     #[inline(always)]
     pub fn upgrade(&self) -> Option<Acquirable<T>> {
         let inner = self.inner.upgrade()?;
+        // SAFETY: unwrap_unchecked is safe here because:
+        // 1. WeakAcquirable<T> was created from an Acquirable<T> via downgrade()
+        // 2. The original Acquirable<T> was created with EntityData that contains type T
+        // 3. EntityData is immutable after creation - its type structure never changes
+        // 4. Therefore, if upgrade() succeeds (Arc is still alive), extract_ptr<T>()
+        //    will always find T in the same location it was originally stored
+        // 5. The returned pointer is valid for the lifetime of the upgraded Arc
         Some(Acquirable::new_raw(
             unsafe { inner.extract_ptr::<T>().unwrap_unchecked() },
             inner,

@@ -98,6 +98,8 @@ impl<Key: Copy + Eq + Hash, Base: Extractable> Archetype<Key, Base> {
         }
 
         let acquirable = Acquirable::new(value);
+        // SAFETY: The compile-time check above ensures that U contains Base as an extractable component.
+        // Therefore, extracting Base from U is guaranteed to succeed.
         let insert = unsafe { acquirable.inner.extract::<Base>().unwrap_unchecked() };
 
         let mut map = self.map.write();
