@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     ops::Deref,
     ptr::NonNull,
     sync::{Arc, Weak},
@@ -67,25 +68,6 @@ pub struct Acquirable<T: Extractable> {
 pub struct WeakAcquirable<T: Extractable> {
     inner: Weak<EntityData>,
     _marker: std::marker::PhantomData<T>,
-}
-
-impl<T: Extractable> Clone for Acquirable<T> {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        Self {
-            target: self.target,
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<T: Extractable> Deref for Acquirable<T> {
-    type Target = T;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.target.as_ref() }
-    }
 }
 
 impl<T: Extractable> Acquirable<T> {
@@ -246,9 +228,6 @@ impl<T: Extractable> Acquirable<T> {
     }
 }
 
-unsafe impl<T: Extractable + Send + Sync> Send for Acquirable<T> where T: Send {}
-unsafe impl<T: Extractable + Send + Sync> Sync for Acquirable<T> where T: Sync {}
-
 impl<T: Extractable> WeakAcquirable<T> {
     /// Upgrade the weak reference to an `Acquirable` if the entity is still alive.
     ///
@@ -284,6 +263,37 @@ impl<T: Extractable> WeakAcquirable<T> {
         ))
     }
 }
+
+impl<T: Extractable> Clone for Acquirable<T> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self {
+            target: self.target,
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T: Extractable> Deref for Acquirable<T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.target.as_ref() }
+    }
+}
+
+impl<T: Extractable + Debug> Debug for Acquirable<T> {
+    #[inline(always)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Acquirable")
+            .field("target", &**self)
+            .finish()
+    }
+}
+
+unsafe impl<T: Extractable + Send + Sync> Send for Acquirable<T> {}
+unsafe impl<T: Extractable + Send + Sync> Sync for Acquirable<T> {}
 
 impl<T: Extractable> Clone for WeakAcquirable<T> {
     #[inline(always)]
