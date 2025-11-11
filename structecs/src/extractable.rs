@@ -84,8 +84,19 @@ impl ExtractionMetadata {
         }
     }
 
-    /// 呼ぶ際にpanicをするさいには、それぞれの関数の一番最初にそれぞれが使用するべき。
-    /// constのpanicはtrack_callerなど意味がないので、public API関数の最初に置くのが良い。
+    /// Compile-time check whether `List` contains `Target` in its extraction metadata.
+    ///
+    /// This function is designed to be called at the beginning of functions that may panic.
+    /// Since const panics don't support `#[track_caller]`, it's best to place this check
+    /// at the start of public API functions for better error reporting.
+    ///
+    /// # Implementation Note
+    ///
+    /// Uses string-based identifier comparison instead of `TypeId::eq()` because:
+    /// - `TypeId::eq()` is not yet stable in const context (as of Rust 1.83)
+    /// - `type_name()` is also not const-stable
+    /// - String comparison with `IDENTIFIER` (module_path + struct_name) provides
+    ///   the same uniqueness guarantee while being const-evaluable
     pub const fn is_has<List: Extractable, Target: Extractable>() -> bool {
         let list = List::METADATA_LIST;
         let target = Target::IDENTIFIER;

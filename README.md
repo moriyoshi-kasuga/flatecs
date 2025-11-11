@@ -158,6 +158,127 @@ assert_eq!(living.id, 42);
 - **Type-safe extraction** - The derive macro ensures compile-time safety for nested type access
 - **Minimal runtime overhead** - Offset-based extraction with zero-cost abstractions
 
+## Compile-time Safety
+
+structecs provides two levels of type checking:
+
+### Runtime Checking (Default)
+
+```rust
+use structecs::*;
+
+#[derive(Extractable)]
+struct Entity { id: u32 }
+
+#[derive(Extractable)]
+#[extractable(entity)]
+struct Player { name: String, entity: Entity }
+
+let player = Acquirable::new(Player {
+    name: "Steve".to_string(),
+    entity: Entity { id: 1 },
+});
+
+// Returns Option - safe runtime check
+let entity: Option<Acquirable<Entity>> = player.extract::<Entity>();
+assert!(entity.is_some());
+```
+
+### Compile-time Checking (Checked APIs)
+
+For performance-critical paths, use `_checked` variants that validate at compile time:
+
+```rust
+use structecs::*;
+
+#[derive(Extractable)]
+struct Entity { id: u32 }
+
+#[derive(Extractable)]
+#[extractable(entity)]
+struct Player { name: String, entity: Entity }
+
+// Compile-time validation - panics at compile time if Player doesn't contain Entity
+let player: Acquirable<Player> = Acquirable::new_checked(Player {
+    name: "Steve".to_string(),
+    entity: Entity { id: 1 },
+});
+
+// No runtime Option check needed - guaranteed to succeed
+let entity: Acquirable<Entity> = player.extract_checked::<Entity>();
+```
+
+**How it works:**
+
+- `ExtractionMetadata::is_has<Container, Target>()` runs at compile time (const evaluation)
+- Uses string-based type identification (`module_path!()` + type name)
+- Why not `TypeId`? Because `TypeId::eq()` is not yet const-stable in Rust
+- Debug builds panic at compile time, release builds use `unsafe` for zero cost
+
+## Optional Archetype (Feature Flag)
+
+For common use cases, structecs provides an optional `Archetype<Key, Base>` collection:
+
+```rust
+use structecs::{Archetype, Extractable, Acquirable};
+
+#[derive(Extractable)]
+struct Entity { id: u32 }
+
+#[derive(Extractable)]
+#[extractable(entity)]
+struct Player { name: String, entity: Entity }
+
+// Compile-time checked: can only insert types containing Entity
+let entities: Archetype<u32, Entity> = Archetype::default();
+
+let player = Player {
+    name: "Alice".to_string(),
+    entity: Entity { id: 1 },
+};
+
+// Stores as Acquirable<Entity>, but accepts any U containing Entity
+entities.insert(1, player);
+
+// Retrieve as base type
+let entity = entities.get(&1).unwrap();
+
+// Extract back to specific type
+let player_ref = entity.extract::<Player>().unwrap();
+assert_eq!(player_ref.name, "Alice");
+```
+
+**Key Features:**
+
+- **Thread-safe**: `Clone` (cheap Arc clone) + `Send + Sync`
+- **Compile-time validated**: `insert()` requires `U: contains Base`
+- **Minimal API**: Access `inner()` for custom operations; methods added only when needed
+- **Type flexibility**: Stores as `Acquirable<Base>`, extract to specific types
+
+**Enable with:**
+
+```toml
+[dependencies]
+structecs = { version = "0.3", features = ["archetype"] }
+```
+
+**Design Philosophy:**
+
+`Archetype` is intentionally minimal. For custom operations, use:
+
+```rust
+use structecs::*;
+
+#[derive(Extractable)]
+struct Entity { id: u32 }
+
+let entities: Archetype<u32, Entity> = Archetype::default();
+
+// Access the underlying Arc<RwLock<HashMap>> for custom operations
+let map = entities.read();  // or .write() for mutations
+// Custom iteration, filtering, etc.
+```
+
 ## Usage Examples
 
 ### Basic Example

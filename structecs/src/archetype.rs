@@ -1,3 +1,62 @@
+//! Thread-safe collection for storing typed entities with compile-time validation.
+//!
+//! The `Archetype` type provides a thread-safe key-value store that guarantees all inserted
+//! values contain a specific base type (`Base`) at compile time. This is particularly useful
+//! for managing collections of heterogeneous entities that share a common extractable component.
+//!
+//! # Design Philosophy
+//!
+//! Unlike traditional ECS archetypes, this implementation is **optional** and **minimal**:
+//! - Users can access the underlying `Arc<RwLock<HashMap>>` via `inner()` for custom operations
+//! - Additional API methods are added only when commonly needed
+//! - The collection stores `Acquirable<Base>`, allowing extraction back to specific types
+//!
+//! # Compile-time Safety
+//!
+//! When inserting a value of type `U`, the compiler ensures that `U` contains `Base` as an
+//! extractable component. This check happens at compile time (in debug builds), preventing
+//! runtime type errors.
+//!
+//! # Example
+//!
+//! ```rust
+//! use structecs::{Archetype, Extractable, Acquirable};
+//!
+//! #[derive(Extractable)]
+//! struct Entity {
+//!     id: u32,
+//! }
+//!
+//! #[derive(Extractable)]
+//! #[extractable(entity)]
+//! struct Player {
+//!     name: String,
+//!     entity: Entity,
+//! }
+//!
+//! // Create an archetype that stores entities by their ID
+//! let entities: Archetype<u32, Entity> = Archetype::default();
+//!
+//! // Insert a Player (which contains Entity)
+//! let player = Player {
+//!     name: "Alice".to_string(),
+//!     entity: Entity { id: 1 },
+//! };
+//! entities.insert(1, player);
+//!
+//! // Retrieve as base type
+//! let entity = entities.get(&1).unwrap();
+//!
+//! // Extract back to specific type
+//! let player_ref = entity.extract::<Player>().unwrap();
+//! assert_eq!(player_ref.name, "Alice");
+//! ```
+//!
+//! # Thread Safety
+//!
+//! `Archetype` is `Clone` (cheap Arc clone) and `Send + Sync`. Multiple clones share the same
+//! underlying data, protected by a `RwLock` for concurrent access.
+
 use std::{hash::Hash, sync::Arc};
 
 use parking_lot::RwLock;
@@ -5,6 +64,9 @@ use rustc_hash::FxHashMap;
 
 use crate::{Acquirable, Extractable};
 
+/// A thread-safe collection that stores `Acquirable<Base>` values indexed by `Key`.
+///
+/// Insertion is compile-time checked to ensure inserted values contain `Base` as an extractable component.
 #[derive(Debug)]
 pub struct Archetype<Key: Copy + Eq + Hash, Base: Extractable> {
     map: Arc<RwLock<FxHashMap<Key, Acquirable<Base>>>>,
